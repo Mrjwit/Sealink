@@ -34,7 +34,8 @@ pacman::p_load(tidyverse, openxlsx, ggmap,
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
 
 # survey data file
-survey <- read.xlsx(paste0(input, "Hydrochemie/S123_f68192a63d674512a1a7375348b20905_EXCEL-2.xlsx"))
+survey <- read.xlsx(paste0(input, "Hydrochemie/S123_f68192a63d674512a1a7375348b20905_EXCEL.xlsx"))
+survey_old <- read.xlsx(paste0(input, "Hydrochemie/Survey_data.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -45,321 +46,107 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 ###############################################################################
 
 # clean up the survey data
-d <- survey %>%
+d1 <- survey %>%
   # remove completely empty columns
   select(where(~ !(all(is.na(.)) | all(. == "")))) %>%
   # select only records with samples
-  filter(!is.na(`Sample.code.#1`))
+  filter(!is.na(`Sample.code.#1`)) %>%
+  # when 2 samples are collected on 1 location, these are stored in the same record
+  # rename columns from sample measurements in order to add second samples later on new lines
+  rename(samplecode = `Sample.code.#1`,
+         sample.depth.top.well.edge = `Sample.depth.top.well.edge.(m).#1`,
+         DO = `DO.(mg/L).#1`,
+         DO_sat = `DO.(saturation.%).#1`,
+         EC_uS = `EC.(uS/cm).#1`,
+         EC_mS = `EC.(mS/cm).#1`,
+         pH = `pH.#1`,
+         Temp = `Temperature.(°C).#1`,
+         NO3_N = `NO3-N.(mg/L).#1`,
+         NO2_N = `NO2-N.(mg/L).#1`,
+         NO3 = `NO3.(mg/L).#1`,
+         NO2 = `NO2.(mg/L).#1`,
+         sample_method = `Sample.method.#1`,
+         sample_depth = `Sample.depth.surface.(m)`,
+         redox = `Redox.#1`,
+         sample_notes = `Note.on.hydrochemistry.well.sample.1`)
+
+# select second samples collected on same location
+d2 <- d1 %>%
+  filter(!is.na(`Sample.code.#2`)) %>%
+  select(-c(samplecode:NO2, 
+            sample_method, sample_depth,
+            redox)) %>%
+  # rename columns from sample measurements in order to merge with first samples later
+  rename(samplecode = `Sample.code.#2`,
+         sample.depth.top.well.edge = `Sample.depth.top.well.edge.(m).#2`,
+         DO = `DO.(mg/L).#2`,
+         DO_sat = `DO.(saturation.%).#2`,
+         EC_uS = `EC.(uS/cm).#2`,
+         EC_mS = `EC.(mS/cm).#2`,
+         pH = `pH.#2`,
+         Temp = `Temperature.(°C).#2`,
+         NO3_N = `NO3-N.(mg/L).#2`,
+         NO2_N = `NO2-N.(mg/L).#2`,
+         NO3 = `NO3.(mg/L).#2`,
+         NO2 = `NO2.(mg/L).#2`,
+         sample_method = `Sample.method.#2`,
+         sample_depth = `Sample.depth.surface.(m).#2`,
+         redox = `Redox.(mV).#2`)
 
 
-# rename columns
+# merge two sample datasets and remove second samples columns
+d <- d1 %>%
+  select(-c(setdiff(names(d1), names(d2)))) %>%
+  rbind(., d2)
 
+# add date and time column
+d <- d %>%
+  mutate(datetime = as.POSIXct(Date.and.time * (60*60*24),
+                               origin = "1899-12-30",
+                               tz = "America/Curacao")) %>%
+  mutate(date = strftime(datetime, format = "%d-%m-%Y"),
+         time = strftime(datetime, format = "%H:%M:%S"))
 
+# check xy coordinates and add them from old survey file if necessary
+survey_coord <- survey_old %>%
+  select(sample, xcoord, ycoord) %>%
+  filter(!is.na(sample)) %>%
+  rename(samplecode = sample)
 
+d <- d %>%
+  left_join(., survey_coord) %>%
+  mutate(xcoord = ifelse(is.na(xcoord), x, xcoord),
+         ycoord = ifelse(is.na(ycoord), y, ycoord))
 
-
-
-
-## Wide to long for 1977
-# add year column 
-d1 <- data1977 %>%
-  mutate(year = 1977) %>%
-  mutate(K = as.numeric(ifelse(K == "<1", 1, K))) %>%
-  pivot_longer(cols = TDS:RSC,
-               names_to = "parameter",
-               values_to = "value") %>%
-  # add column with detection limits (dl). Values of 1 for K were <1
-  mutate(dl = ifelse(parameter == "K" & value == 1,
-                     "<", ""),
-         # change EC from mS/cm to uS/cm
-         value = ifelse(parameter == "EC",
-                        value * 1000, value)) %>%
-  # add column with units
-  mutate(units = ifelse(parameter == "EC", "uS/cm",
-                        ifelse(parameter == "pH", "",
-                               "mg/l")),
-         # remove whitespaces from putcode
-         putcode = str_trim(putcode), 
-         # add empty date column
-         date = "") %>%
-  # reoder columns
-  select(putcode, xcoord, ycoord, geologie, putsoort,
-         year, date, sample, parameter, dl, value, units)
-
-## wide to long for 1992
-d2 <- data1992 %>%
-  mutate(year = 1992) %>%
-  # Cd and NH4 column are characters
-  mutate(Cd = as.numeric(Cd),
-         NH4 = as.numeric(ifelse(NH4 == ">>400", 400, 
-                                 ifelse(NH4 == "-999", NA, NH4)))) %>%
-  pivot_longer(cols = Ca:clustermember,
-               names_to = "parameter",
-               values_to = "value") %>%
-  # add column with detection limits (dl). Values of 400 for NH4 were >>400
-  mutate(dl = ifelse(parameter == "NH4" & value == 400,
-                     ">>", ""),
-         # change EC from mS/cm to uS/cm
-         value = ifelse(parameter == "EC",
-                        value * 1000, value)) %>%
-  # add column with units
-  mutate(units = ifelse(parameter == "EC", "uS/cm",
-                        ifelse(parameter == "pH", "",
-                               ifelse(parameter == "Diepte", "m",
-                                      ifelse(parameter == "Temp", "Degrees Celcius",
-                                             "mg/l")))),
-         # remove whitespaces from putcode
-         putcode = gsub(" ", "", putcode)) %>%
-  # remove "i" from putcodes starting with "i"
-  mutate(putcode = gsub("i", "", putcode)) %>%
-  rename(date = sampling.date) %>%
-  # reoder columns
-  select(putcode, xcoord, ycoord, geologie, putsoort,
-         year, date, sample, parameter, dl, value, units)
-
-# merge two datasets 
-d <- rbind(d1, d2)
-
-# add Decimal degrees coordinates from well data
-well_loc <- well_loc %>%
-  mutate(Wellno2 = tolower(Wellno2))
-d$lat <- well_loc[match(d$putcode, well_loc$Wellno2), 16]
-d$lon <- well_loc[match(d$putcode, well_loc$Wellno2), 15]
-d$missingcoord <- ifelse(is.na(d$lat), T, F)
-
-write.xlsx(d, paste0(output, "Clean_data/hydrochemistry1977-1992.xlsx"))
-
-
-## Check hydrochemical statistics
-
-# differences between years in tabel
-# EC
-
-d %>%
-  filter(parameter == "EC",
-         !is.na(value)) %>%
-  group_by(year) %>%
-  summarise(nr.measurements = n(),
-            p10 = quantile(value, 0.10),
-            p25 = quantile(value, 0.25),
-            med = median(value),
-            avg = mean(value) %>% round(),
-            p75 = quantile(value, 0.75),
-            p95 = quantile(value, 0.95)
-  ) %>% view()
-
-# now in boxplot
-dat <- d %>%
-  filter(parameter == "EC",
-         !is.na(value))
-
-n_fun <- function(x) {
-  return(c(y = -2000,
-           label = length(x)))
-}
-
-ggplot(data = dat, 
-       aes(x = factor(year),
-           y = value)) +
-  stat_boxplot(geom = 'errorbar', width = 0.4) +
-  geom_boxplot(fill = "lightgrey", width = 0.6, outlier.shape = NA) +
-  stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
-  scale_x_discrete(name = "") +
-  scale_y_continuous(name = "EC [uS/cm]") +
-  coord_cartesian(ylim = c(0, quantile(dat$value, 0.9))) +
-  theme_bw()
-
-# Now for all parameters
-# all in 1 image
-ggplot(data = d %>% filter(!parameter %in% c('c1', 'c2', 'c3', 'c4', 
-                                             'clustermember', 'Diepte',
-                                             'RSC', 'SAR')), 
-       aes(x = factor(year),
-           y = value)) +
-  stat_boxplot(geom = 'errorbar', width = 0.4) +
-  geom_boxplot(fill = "lightgrey", width = 0.6, outlier.shape = NA) +
-  #stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
-  scale_x_discrete(name = "") +
-  scale_y_continuous(name = "") + 
-  #scale_y_continuous(name = "EC [uS/cm]") +
-  theme_bw() +
-  facet_wrap(~parameter, scales = "free")
-
-# write and save seperate images
-dat <- d %>%
-  filter(!parameter %in% c('c1', 'c2', 'c3', 'c4', 
-                           'clustermember', 'Diepte',
-                           'RSC', 'SAR'))
-
-for(i in unique(dat$parameter)) {
-  j <- dat %>%
-    filter(parameter == i)
+# check coordinates
+# d %>% select(samplecode, x, y, xcoord, ycoord) %>% 
+#   mutate(verschilx = ifelse(x == xcoord, 0, 1),
+#          verschily = ifelse(y == ycoord, 0, 1)) %>%
+#   mutate(xc = ifelse(is.na(xcoord), x, xcoord),
+#          yc = ifelse(is.na(ycoord), y, ycoord)) %>%
+#   view()
   
-  ggplot(data = j, 
-         aes(x = factor(year),
-             y = value)) +
-    stat_boxplot(geom = 'errorbar', width = 0.4) +
-    geom_boxplot(fill = "lightgrey", width = 0.6, outlier.shape = NA) +
-    #stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
-    scale_x_discrete(name = "") +
-    scale_y_continuous(name = paste0(j$parameter[1], " [", j$units[1], "]")) +
-    coord_cartesian(ylim = quantile(j$value, c(0.01, 0.99), na.rm = T)) +
-    theme_bw()
-  ggsave(paste0(output, "Output/Figures/Historical_data/boxplot_", j$parameter[1], ".png"))
-  
-  
-}
+# reorder columns and remove redundant columns
+d_set <- d %>%
+  select(samplecode, Well.ID, xcoord, ycoord, date, time, 
+         `Well.depth.below.surface.(m)`, `Depth.of.well.owner.(m)`, `Groundwater.level.below.surface.(m)`,
+         sample_method, sample_depth,
+         EC_uS, EC_mS, pH, Temp, DO, DO_sat, redox, NO3_N, NO3, NO2_N, NO2, 
+         sample_notes,
+         `Geology.according.to.geological.map.(Beets)`, `Other.-.Geology.according.to.geological.map.(Beets)`,
+         Geology.based.on.own.observations, Land.use.according.to.land.planning.map, 
+         Land.use.based.on.own.observations, `Other.-.Land.use.based.on.own.observations`,
+         Well.type, `Other.-.Well.type`, `Inner.well.diameter.(m)`, Casing.type.inner, Depth.casing.inner,
+         `House./.location.waste.water.collection`, `Well.distance.from.cesspit.or.septic.tank.(m)`, `Well.distance.from.house.(m)`,
+         `Note.on.sewage.(in.the.area)`, Note.on.the.well.type, Note.on.well.identification,
+         Name.owner, Address, `Contact.mail/phone.number:`)
 
 
-# differences between geologies
-# data tabel
-dat <- d %>%
-  filter(!parameter %in% c('c1', 'c2', 'c3', 'c4', 
-                           'clustermember', 'Diepte',
-                           'RSC', 'SAR'),
-         !is.na(value)) %>%
-  group_by(geologie, parameter, year) %>%
-  summarise(nr.measurements = n(),
-            p10 = quantile(value, 0.10),
-            p25 = quantile(value, 0.25),
-            med = median(value),
-            avg = mean(value) %>% round(),
-            p75 = quantile(value, 0.75),
-            p95 = quantile(value, 0.95)
-  ) %>% view()
+###############################################################################
+# save data
+###############################################################################
 
-# boxplots
-# all in 1 image
-dat <- d %>%
-  filter(!parameter %in% c('c1', 'c2', 'c3', 'c4', 
-                           'clustermember', 'Diepte',
-                           'RSC', 'SAR'),
-         !is.na(value))
-
-ggplot(data = dat, 
-       aes(x = factor(year),
-           y = value,
-           fill = geologie)) +
-  stat_boxplot(geom = 'errorbar') +
-  geom_boxplot(outlier.shape = NA) +
-  #stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
-  scale_x_discrete(name = "") +
-  scale_y_continuous(name = "") + 
-  #coord_cartesian(ylim = quantile(dat$value, c(0.02, 0.99))) +
-  #scale_y_continuous(name = "EC [uS/cm]") +
-  theme_bw() +
-  facet_wrap(~parameter, scales = "free")
-
-dat <- d %>%
-  filter(parameter == "EC",
-         !is.na(value))
-
-ggplot(data = dat, 
-       aes(x = factor(year),
-           y = value,
-           fill = geologie)) +
-  stat_boxplot(geom = 'errorbar') +
-  geom_boxplot(outlier.shape = NA) +
-  #stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
-  scale_x_discrete(name = "") +
-  scale_y_continuous(name = "") + 
-  coord_cartesian(ylim = quantile(dat$value, c(0.02, 0.99))) +
-  #scale_y_continuous(name = "EC [uS/cm]") +
-  theme_bw() 
-#facet_wrap(~parameter, scales = "free")
+write.xlsx(d, paste0(output, "Clean_data/survey_complete.xlsx"))
+write.xlsx(d_set, paste0(output, "Clean_data/survey_clean.xlsx"))
 
 
-# differences in land use
-
-
-
-
-
-## Check coordinates and well locations 1977 - 1992
-dat <- d %>%
-  select(putcode, year, xcoord, ycoord, lat, lon, missingcoord) %>%
-  unique()
-
-write.xlsx(dat, paste0(output, "putten_hydrochemie.xlsx"))
-
-dat %>%
-  group_by(putcode) %>%
-  mutate(jaren.putcode = length(year)) %>%
-  ungroup() %>%
-  mutate(coord = paste0(xcoord, ycoord)) %>%
-  group_by(coord) %>%
-  mutate(jaren.coord = length(year)) %>%
-  ungroup() %>%
-  #filter(missingcoord == T) %>%
-  group_by(year) %>%
-  summarise(n.putten = n_distinct(putcode),
-            n.overlap.putcode = n_distinct(putcode[jaren.putcode == 2]),
-            n.overlap.coord = n_distinct(putcode[jaren.coord == 2]),
-            n.missingDecimalcoord = n_distinct(putcode[missingcoord == T])) %>%
-  view()
-
-dat %>%
-  mutate(coord = paste0(xcoord, ycoord)) %>%
-  group_by(coord) %>%
-  summarise(aantal.putten = n_distinct(putcode),
-            putcodes = paste(unique(putcode), collapse = ", ")) %>%
-  view()
-
-## Checks ##
-# 233 wells in 1977
-# 97 wells in 1992
-# only 62 wells overlapping by putcode between 1977 and 1992..
-d1 %>% filter(putcode %in% d2$putcode) %>% select(putcode) %>% n_distinct()
-d2 %>% filter(putcode %in% d1$putcode) %>% select(putcode) %>% n_distinct()
-
-# check using coordinates if more wells overlap  
-d1 <- d1 %>%
-  mutate(coord = paste0(xcoord, ycoord))
-d2 <- d2 %>%
-  mutate(coord = paste0(xcoord, ycoord))
-
-# 51 unique xy-coordinates that match between the 2 years
-d1 %>% filter(coord %in% d2$coord) %>% select(coord) %>% n_distinct()
-d2 %>% filter(coord %in% d1$coord) %>% select(coord) %>% n_distinct()
-
-d1 %>% 
-  filter(coord %in% d2$coord) %>% 
-  select(putcode, coord) %>% 
-  distinct() %>%
-  view()
-
-d1_coord <- d1 %>%
-  select(putcode, year, xcoord, ycoord)
-d2_coord <- d2 %>%
-  select(putcode, year, xcoord, ycoord)
-
-test <- full_join(d1_coord, d2_coord, by = "putcode") %>% 
-  unique() %>%
-  view()
-
-
-putcode, year, xcoord, ycoord, putcode, year, xcoord, ycoord
-
-
-folder <- paste0("C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/Put data Curacao/", 
-                 "File with individual put data non cleaned versions/")
-filenames <- list.files(path = folder)
-test <- filenames %>%
-  gsub(".XLS", "", .) %>%
-  tolower() %>%
-  head(., -1) %>%
-  data.frame() %>%
-  rename(putcode = ".")
-test$lon <- well_loc[match(test$putcode, well_loc$Wellno2), 15]
-test$lat <- well_loc[match(test$putcode, well_loc$Wellno2), 16]
-test$x1977 <- as.data.frame(d1)[match(test$putcode, d1$putcode), 2]
-test$y1977 <- as.data.frame(d1)[match(test$putcode, d1$putcode), 3]
-test$x1992 <- as.data.frame(d2)[match(test$putcode, d2$putcode), 2]
-test$y1992 <- as.data.frame(d2)[match(test$putcode, d2$putcode), 3]
-test$nocoord <- 
-  test$diff_77_92 <- 
-  
-  
-  
-  
-  

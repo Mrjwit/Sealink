@@ -46,25 +46,36 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 d <- alk %>%
   # titrations are in duplicates, select the ones with the highest accuracy
   filter(Select == 1) %>%
-  # select only relevant columns
-  select(Sample.code, `C.[meq/l]`, `C.[mg/l]`, mmol, Notes) %>%
   # add parameter column with HCO3
-  mutate(parameter = "HCO3") %>%
+  mutate(parameter = "HCO3",
+         `C.[meq/l]` = as.numeric(`C.[meq/l]`),
+         `C.[mg/l]` = as.numeric(`C.[mg/l]`)) %>%
   # rename columns
-  rename(samplecode = Sample.code) %>%
-  select(samplecode, parameter, `C.[mg/l]`, `C.[meq/l]`, mmol, Notes)
+  rename(samplecode = Sample.code,
+         "mg/l" = `C.[mg/l]`,
+         "meq/l" = `C.[meq/l]`) %>%
+  # place different units in long format
+  pivot_longer(., cols = c(`mg/l`, `meq/l`, mmol),
+               values_to = "value",
+               names_to = "units") %>%
+  # select only relevant columns 
+  select(samplecode, parameter, value, units, Notes) 
 
 # Check if every sample has only 1 value
 check <- d %>%
+  filter(units == "mg/l") %>%
   group_by(samplecode) %>%
-  summarise(measurements = n_distinct(`C.[mg/l]`)) %>%
+  summarise(measurements = n_distinct(value)) %>%
   filter(measurements > 2)
 if(nrow(check) > 0) {
    stop("More than 1 value for alkalinity in a sample")
 }
 
 # Check if every sample has a value for alkalinity 
+#...
 
+
+# 
 
 
 ###############################################################################

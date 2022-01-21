@@ -6,8 +6,8 @@
 # Dependencies: none
 #
 #
-# Auteur: Mike Wit
-# Datum: 12-01-2022
+# Author: Mike Wit
+# Date: 12-01-2022
 # Edit: XX-XX-XXXX
 # 
 # 

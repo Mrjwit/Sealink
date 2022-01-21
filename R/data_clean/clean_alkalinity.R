@@ -66,7 +66,7 @@ check <- d %>%
   filter(units == "mg/l") %>%
   group_by(samplecode) %>%
   summarise(measurements = n_distinct(value)) %>%
-  filter(measurements > 2)
+  filter(measurements > 1)
 if(nrow(check) > 0) {
    stop("More than 1 value for alkalinity in a sample")
 }

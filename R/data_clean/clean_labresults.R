@@ -31,11 +31,14 @@ input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/"
 
 # IC data files
 IC <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iris_Verstappen.xlsx"),
-                sheet = "Report", startRow = 2) # NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
+                sheet = "Report", startRow = 2, check.names = T) 
+# NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
 
 # Diluted IC samples
 IC_dil <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iris_Verstappen_verdunning.xlsx"),
-                    sheet = "Report", startRow = 2) # NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
+                    sheet = "Report", startRow = 2, check.names = T) 
+# NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
+
 # ICP data file
 
 # DA data file
@@ -50,11 +53,16 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 
 #### IC edits and checks ####
 
+oldnames <- names(IC)
+newnames <- c("ID", "Fl", "Cl", "NO2", "Br", "NO3", "PO4", "SO4", 
+              "dillution_factor", "ID2", "Fl_round", "Cl_round", "NO2_round", 
+              "Br_round", "NO3_round", "PO4_round", "SO4_round")
+
 d <- IC %>%
   # rename double column names
-   rename(...) %>%
+  rename_with(~ newnames[which(oldnames == .x)], .cols = oldnames) %>%
   # remove rows with calibration standards and blank samples
-  filter(samplecode contains())
+  filter(!str_detect(ID, c("Estim", "St", "Blanco", "QS STD anion")))
   # add units and detection limit column
   mutate(units = "mg/l",
          dl = "") %>%

@@ -11,7 +11,6 @@
 # Edit: XX-XX-XXXX
 # 
 # 
-
 ###############################################################################
 
 ###############################################################################
@@ -20,11 +19,8 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-#pacman::p_load(tidyverse, dplyr, ggplot2, openxlsx, readr, ggmap, 
-#               sf, tmap, tmaptools, leaflet)
 pacman::p_load(tidyverse, openxlsx, ggmap, 
                sf, leaflet, data.table, cowplot, data.table)
-
 
 ###############################################################################
 # load data

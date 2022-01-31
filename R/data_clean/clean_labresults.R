@@ -1,7 +1,7 @@
 #
-# Input: raw data of the lab analyses (IC, ICP, DA)
+# Input: raw data of the lab analyses from TUD (IC, ICP, DA)
 #         
-# Output: Cleaned lab results
+# Output: Cleaned lab results merged together in long and wide format
 # 
 # Dependencies: none
 #

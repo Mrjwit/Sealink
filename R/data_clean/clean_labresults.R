@@ -40,8 +40,10 @@ IC_dil <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iri
 # NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
 
 # ICP data file
-# ICP <- read.xlsx(paste0(input, ".xlsx"),
-#                  sheet = "")
+ICP <- read.xlsx(paste0(input, "Lab/ICP/20220124_Mike_Iris_all_elements.xlsx"),
+                 sheet = "summary")
+ICP_dil_fac <- read.xlsx(paste0(input, "Lab/ICP/ICP preperations data.xlsx"),
+                         sheet = "ICP-MS handed in", startRow = 17)
 
 # DA data file
 DA <- read.xlsx(paste0(input, "Lab/DA/PO4 & NH4 Iris.xlsx"),
@@ -180,7 +182,20 @@ d <- d_IC %>%
     # if both the undiluted and diluted sample measure >dl, then pick the undiluted sample
     limit_symbol == "" & limit_symbol_dil == "" ~ value,
     TRUE ~ NA_real_ )) %>%
+  # adjust limit symbols
+  mutate(dt = case_when(
+    limit_symbol == limit_symbol_dil ~ limit_symbol,
+    limit_symbol == ">" & limit_symbol_dil != ">" ~ limit_symbol_dil,
+    limit_symbol == "<" & limit_symbol_dil != "<" ~ limit_symbol_dil,
+    TRUE ~ "" )) %>%
   view()
+
+d_IC <- d %>%
+  mutate(detection_limit = ifelse(dt == "<" & detection_limit > waarde,
+                                  waarde, detection_limit)) %>%
+  select(samplecode, parameter, waarde, dt, detection_limit, units) %>%
+  rename(limit_symbol = dt,
+         value = waarde)
 
 ## Perform quality control checks -> Maybe separate QC script better ##
 
@@ -273,7 +288,145 @@ d_ALK <- DA_alk %>%
 
 #### ICP edits and checks ####
 
+oldnames <- names(ICP)
+newnames <- c("labcode", "Li", "Be", "B", "Na", "Mg", "Mg26", "Al",
+              "Si", "P", "S", "K", "Ca", "Ti", "V", "Cr", "Mn",
+              "Fe56", "Fe57", "Cu", "Zn", "Co", "Ni", "As", "Se",
+              "Mo", "Ag", "Cd", "Sb", "Ba", "Pb")
+remove.list <- paste(c("SRM", "ERM", "mg/"), collapse = '|')
 
+# values with #Name indicates that the detector is overloaded
+# values with x indicates that the value is above the calibration line
+# values with b indicates that the value is below the detection limit ??
+
+d <- ICP %>%
+  # rename column names
+  rename_with(~ newnames[which(oldnames == .x)], .cols = oldnames) %>%
+  # remove rows with calibration standards and blank samples
+  filter(!str_detect(labcode, remove.list)) %>%
+  # add samplecode to lab numbers 
+  left_join(., lab_table %>% filter(analysis == "ICP") %>% select(-analysis),
+            by = c("labcode" = "labcode")) %>%
+  # add dilution factor 
+  left_join(., ICP_dil_fac %>% select(Sample.ID, Dilution),
+            by = c("labcode" = "Sample.ID")) %>%
+  # convert all elements to characters so they can be placed in one column
+  mutate_at(c(2:31), as.character) %>%
+  # add Fe56 and Fe57 isotopes together
+  mutate(Fe56_dt = ifelse(str_detect(Fe56, "b"), "<", ""),
+         Fe56_v = parse_number(Fe56),
+         Fe57_dt = ifelse(str_detect(Fe57, "b"), "<", ""),
+         Fe57_v = parse_number(Fe57)) %>%
+  mutate(Fe = case_when(
+    Fe56_dt != "<" & Fe57_dt != "<" ~ as.numeric(Fe56_v) + as.numeric(Fe57_v),
+    Fe56_dt != "<" & Fe57_dt == "<" ~ as.numeric(Fe56_v),
+    Fe56_dt == "<" & Fe57_dt != "<" ~ as.numeric(Fe57_v),
+    Fe56_dt == "<" & Fe57_dt == "<" ~ min(as.numeric(Fe56_v), as.numeric(Fe57_v)),
+    TRUE ~ NA_real_ ) %>% as.character()) %>%
+  # remove help columns
+  select(-c(Fe56_dt, Fe56_v, Fe57_dt, Fe57_v)) %>%
+  # place parameters in long format
+  pivot_longer(., cols = c(Li:Fe, -samplecode, -Dilution),
+               values_to = "value",
+               names_to = "parameter") %>%
+  # add limit symbol, detection limit values and units
+  mutate(limit_symbol = ifelse(str_detect(value, "b"), "<", 
+                               ifelse(str_detect(value, "x"), ">", "")),
+         detection_limit = ifelse(str_detect(value, "b"),
+                                  as.numeric(gsub("b", "", value)), NA),
+         units = "ug/l") %>%
+  # change values to numeric and correct for dilution
+  mutate(value = parse_number(value) * Dilution) %>%
+  # change units for Ca, Fe, K, Mg, Na, P, S, en Si
+  mutate(value = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+                        value / 1000, value),
+         units = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+                        "mg/l", units)) %>%
+  # select only relevant columns
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units)
+
+
+## Some quick checks, remove later elsewhere!
+# Dilution factors in histogram
+ggplot(d %>% select(samplecode, Dilution) %>% unique(),
+       aes(x = Dilution)) +
+  geom_histogram(binwidth = 10) +
+  scale_x_continuous(name = "Dilution factor") +
+  theme_bw()
+
+ggplot(d %>% select(samplecode, Dilution) %>% unique(),
+       aes(y = Dilution)) +
+  geom_boxplot()
+
+d %>% 
+  select(samplecode, Dilution) %>% 
+  unique() %>%
+  summary()
+
+# boxplot per parameter to see from which parameters to change units.
+calc_boxplot_stat <- function(x) {
+  coef <- 1.5
+  n <- sum(!is.na(x))
+  # calculate quantiles
+  stats <- quantile(x, probs = c(0.0, 0.25, 0.5, 0.75, 1.0))
+  names(stats) <- c("ymin", "lower", "middle", "upper", "ymax")
+  iqr <- diff(stats[c(2, 4)])
+  # set whiskers
+  outliers <- x < (stats[2] - coef * iqr) | x > (stats[4] + coef * iqr)
+  if (any(outliers)) {
+    stats[c(1, 5)] <- range(c(stats[2:4], x[!outliers]), na.rm = TRUE)
+  }
+  return(stats)
+}
+
+ggplot(d %>% mutate(parameter = paste0(parameter, " [", units, "]")), 
+       aes(x = parameter, y = value, groep = parameter)) +
+  #geom_boxplot(outlier.shape = NA) +
+  stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot") +
+  theme_bw() +
+  facet_wrap(facets = "parameter", scales = "free")
+# boxplots with only values >dl
+ggplot(d %>% mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+         filter(limit_symbol != "<"), 
+       aes(x = parameter, y = value, groep = parameter)) +
+  #geom_boxplot(outlier.shape = NA) +
+  stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot") +
+  theme_bw() +
+  facet_wrap(facets = "parameter", scales = "free")
+
+# how many samples >dl and <cl per parameter
+check_limits <- d %>%
+  group_by(parameter) %>%
+  summarise(samples = n(),
+            "< cal. line [%]" = round(length(value[limit_symbol == "<"]) / n() * 100, digits = 1),
+            "> cal. line [%]" = round(length(value[limit_symbol == ">"]) / n() * 100, digits = 1),
+            "value ok [%]" = round(length(value[limit_symbol == ""]) / n() * 100, digits = 1)) %>%
+  view()
+
+d %>% 
+  group_by(parameter) %>%
+  summarise(n.dl = n_distinct(value[limit_symbol == "<"])) %>%
+  view()
+
+ggplot(check_limits %>% pivot_longer(., cols(3:5),
+                                     names_to = "group",
+                                     values_to = "percentage"), aes(x = parameter, y = percentage, group = group)) +
+  geom_histogram()
+
+check_limits %>% pivot_longer(., cols(`< cal. line [%]`:`value ok [%]`),
+                              names_to = "group",
+                              values_to = "percentage")
+
+  # make wide format ICP
+  d_ICP_wide <- d %>%
+    # adjust values < and > dl
+    mutate(parameter = paste(parameter, units),
+           value = paste(limit_symbol, value)) %>%
+    select(samplecode, parameter, value) %>%
+    pivot_wider(names_from = parameter,
+                values_from = value) %>%
+    view()
+    
 
 # Check IB <10%
 
@@ -290,6 +443,6 @@ d <- rbind(d_IC, d_DA, d_ALK, d_ICP)
 ###############################################################################
 
 write.xlsx(d, paste0(output, "Clean_data/lab_data.xlsx"))
-#write.xlsx(d_wide, paste0(output, "Clean_data/lab_data_wide.xlsx"))
-
+write.xlsx(d_wide, paste0(output, "Clean_data/lab_data_wide.xlsx"))
+write.xlsx(d_ICP_wide, paste0(output, "Clean_data/lab_ICP_wide.xlsx"))
 

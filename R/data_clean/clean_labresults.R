@@ -213,9 +213,11 @@ d_IC <- d %>%
 
 #### DA PO4 and NH4 edits and checks ####
 
+# add dl and ds based on analysis!!
+
 d_DA <- DA %>%
   # select relevant columns
-  select(Sample.ID, Results, Units) %>%
+  select(Sample.ID, Results, Units, Test) %>%
   # add samplecode to lab numbers 
   left_join(., lab_table %>% filter(analysis == "DA") %>% select(-analysis),
             by = c("Sample.ID" = "labcode")) %>%
@@ -230,9 +232,9 @@ d_DA <- DA %>%
                             Results / (30.973762 / 94.9714),
                             Results / (14.0067 / 18.039))) 
   # place different units and corresponding values in long format
-d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units),
-           d_DA %>% select(samplecode, parameter, Results.2, Units.2) %>% rename(Results = Results.2,
-                                                                           Units = Units.2)) %>%
+d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units, Test),
+           d_DA %>% select(samplecode, parameter, Results.2, Units.2, Test) %>% rename(Results = Results.2,
+                                                                                       Units = Units.2)) %>%
   rename(value = Results,
          units = Units) %>%
   arrange(samplecode, parameter) %>%
@@ -292,7 +294,20 @@ ggplot(check, aes(x = value_DA, y = value_IC)) +
 #   view()
 
 
-  # reorder columns
+# DA uses multiple tests for PO4. Make sure only 1 value is available per sample
+check <- d %>%
+  filter(units == "mg/l") %>%
+  group_by(samplecode, parameter) %>%
+  summarise(nr.measurements = length(value),
+            Test = ifelse(n_distinct(Test) == 1, Test,
+                          paste(unique(Test), collapse = ", "))) %>%
+  filter(nr.measurements > 1) 
+
+if(nrow(check) > 0) {
+  stop(paste("More than 1 value for", unique(check$parameter), "in a sample"))
+}
+
+# reorder columns into final format
 d_DA <- d %>%
   select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
 

@@ -1,5 +1,8 @@
 #
-# Input: raw data of the lab analyses from TUD (IC, ICP, DA)
+# Input: raw data of the lab analyses of Ion Chromotography (IC), 
+# Ion Induced Plasma Mass Spectromotry (ICP-MS), Discrete Analyzer (DA),
+# Isotope Analyzer (IA) from TUD and Dissolved Organic Carbon Analyzer (DOC) 
+# from UvA
 #         
 # Output: Cleaned lab results merged together in long and wide format
 # 
@@ -50,6 +53,12 @@ DA <- read.xlsx(paste0(input, "Lab/DA/PO4 & NH4 Iris.xlsx"),
                 sheet = "Summary")
 DA_alk <- read.xlsx(paste0(input, "Lab/DA/Alkalinity Iris.xlsx"),
                     sheet = "Summary")
+
+# Isotope data file
+
+
+# DOC data file
+
 
 # Table to link labcodes of different analysis to samplecodes
 lab_table <- read.xlsx("C:/Users/mikewit/Documents/SEALINK/Documents/Lab/vertaaltabel_labmonsters.xlsx",
@@ -153,7 +162,7 @@ d <- d_IC %>%
               rename(value_dil = value,
                      limit_symbol_dil = limit_symbol) %>% 
               select(samplecode, parameter, limit_symbol_dil, value_dil)) %>%
-  filter(!is.na(value_dil)) %>%
+  #filter(!is.na(value_dil)) %>%
   # percentage deviation between diluted and undiluted sample
   mutate(diff = round((value / value_dil), digits = 4)) %>%
   # determine rules for getting the right values
@@ -176,13 +185,14 @@ d <- d_IC %>%
     limit_symbol == limit_symbol_dil ~ limit_symbol,
     limit_symbol == ">" & limit_symbol_dil != ">" ~ limit_symbol_dil,
     limit_symbol == "<" & limit_symbol_dil != "<" ~ limit_symbol_dil,
-    TRUE ~ "" )) %>%
-  view()
+    TRUE ~ "" )) 
 
 d_IC <- d %>%
   mutate(detection_limit = ifelse(dt == "<" & detection_limit > waarde,
-                                  waarde, detection_limit)) %>%
-  select(samplecode, parameter, waarde, dt, detection_limit, units) %>%
+                                  waarde, detection_limit),
+         waarde = ifelse(is.na(waarde), value, waarde),
+         method = "IC") %>%
+  select(samplecode, parameter, waarde, dt, detection_limit, units, method) %>%
   rename(limit_symbol = dt,
          value = waarde)
 
@@ -201,7 +211,7 @@ d_IC <- d %>%
 # }
 
 
-#### DA edits and checks ####
+#### DA PO4 and NH4 edits and checks ####
 
 d_DA <- DA %>%
   # select relevant columns
@@ -215,7 +225,7 @@ d_DA <- DA %>%
   mutate(parameter = ifelse(str_detect(Units, "P"),
                             "PO4", "NH4"),
          Units.2 = "mg/l") %>%
-  # Adjust units? Convert mg/l P to mg/l PO4 and mg/l N to mg/l NH4
+  # Adjust units: Convert mg/l P to mg/l PO4 and mg/l N to mg/l NH4
   mutate(Results.2 = ifelse(str_detect(Units, "P"),
                             Results / (30.973762 / 94.9714),
                             Results / (14.0067 / 18.039))) 
@@ -226,7 +236,8 @@ d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units),
   rename(value = Results,
          units = Units) %>%
   arrange(samplecode, parameter) %>%
-  # assume negative values to be <dl
+  # assume negative values to be <dl and add detection limits based on DA analysis method manual
+  # where dl NH4 = 0.04 and dl PO4 = 0.013 -> CHECK!! 
   mutate(limit_symbol = ifelse(value < 0,
                                "<", ""),
          detection_limit = case_when(
@@ -234,13 +245,38 @@ d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units),
                              parameter == "NH4" & units == "mg/l" ~ 0.04 / (14.0067 / 18.039),
                              parameter == "PO4" & units == "mg P/L " ~ 0.013,
                              parameter == "PO4" & units == "mg/l" ~ 0.013 / (30.973762 / 94.9714),
-                             TRUE ~ NA_real_) %>% round(digits = 4)) 
+                             TRUE ~ NA_real_) %>% round(digits = 4),
+         # set negative values to 0
+         value = ifelse(value < 0, 0, value),
+         method = "DA") 
 
 ###
 ### Change negative values and values < dl ???
 ### 
 
+d %>%
+  mutate(check = ifelse(value < detection_limit, 1, 0)) %>%
+  filter(check == 1) 
 
+## compare PO4 from IC and DA
+check <- d %>% 
+  filter(parameter == "PO4", units == "mg/l") %>%
+  rename(value_DA = value) %>%
+  select(samplecode, parameter, value_DA, units) %>%
+  left_join(., d_IC %>% 
+                  filter(parameter == "PO4") %>%
+              rename(value_IC = value) %>%
+              select(samplecode, parameter, value_IC))
+
+ggplot(check, aes(x = value_DA, y = value_IC)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(-0.2, 30),
+                     name = "PO4 DA [mg/l]") +
+  scale_y_continuous(limits = c(-0.2, 30),
+                     name = "PO4 IC [mg/]") +
+  theme_bw()
 
 
 # # checks
@@ -258,7 +294,7 @@ d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units),
 
   # reorder columns
 d_DA <- d %>%
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units)
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
 
 # Clean up DA alkalinity set
 d_ALK <- DA_alk %>%
@@ -274,8 +310,9 @@ d_ALK <- DA_alk %>%
          units = "mg/l",
          value = Results,
          limit_symbol = "",
-         detection_limit = NA) %>%
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units)
+         detection_limit = NA,
+         method = "DA") %>%
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
   
 
 #### ICP edits and checks ####
@@ -324,36 +361,37 @@ d <- ICP %>%
   # add limit symbol, detection limit values and units
   mutate(limit_symbol = ifelse(str_detect(value, "b"), "<", 
                                ifelse(str_detect(value, "x"), ">", "")),
-         detection_limit = ifelse(str_detect(value, "b"),
-                                  as.numeric(gsub("b", "", value)), NA),
          units = "ug/l") %>%
   # change values to numeric and correct for dilution
-  mutate(value = parse_number(value) * Dilution) %>%
+  mutate(value_dil = parse_number(value),
+         value = parse_number(value) * Dilution) %>%
   # change units for Ca, Fe, K, Mg, Na, P, S, en Si
   mutate(value = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
                         value / 1000, value),
          units = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
-                        "mg/l", units)) %>%
+                        "mg/l", units),
+         detection_limit = ifelse(limit_symbol == "<", value, NA),
+         method = "ICP-MS") %>%
   # select only relevant columns
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units)
+  select(samplecode, parameter, value, value_dil, limit_symbol, detection_limit, units, method)
 
 
-## Some quick checks, remove later elsewhere!
+## Some quick checks, move elsewhere later!
 # Dilution factors in histogram
-ggplot(d %>% select(samplecode, Dilution) %>% unique(),
-       aes(x = Dilution)) +
-  geom_histogram(binwidth = 10) +
-  scale_x_continuous(name = "Dilution factor") +
-  theme_bw()
-
-ggplot(d %>% select(samplecode, Dilution) %>% unique(),
-       aes(y = Dilution)) +
-  geom_boxplot()
-
-d %>% 
-  select(samplecode, Dilution) %>% 
-  unique() %>%
-  summary()
+# ggplot(d %>% select(samplecode, Dilution) %>% unique(),
+#        aes(x = Dilution)) +
+#   geom_histogram(binwidth = 10) +
+#   scale_x_continuous(name = "Dilution factor") +
+#   theme_bw()
+# 
+# ggplot(d %>% select(samplecode, Dilution) %>% unique(),
+#        aes(y = Dilution)) +
+#   geom_boxplot()
+# 
+# d %>% 
+#   select(samplecode, Dilution) %>% 
+#   unique() %>%
+#   summary()
 
 # boxplot per parameter to see from which parameters to change units.
 calc_boxplot_stat <- function(x) {
@@ -416,15 +454,6 @@ d %>%
   summarise(n.dl = n_distinct(value[limit_symbol == "<"])) %>%
   view()
 
-ggplot(check_limits %>% pivot_longer(., cols(3:5),
-                                     names_to = "group",
-                                     values_to = "percentage"), aes(x = parameter, y = percentage, group = group)) +
-  geom_histogram()
-
-check_limits %>% pivot_longer(., cols(`< cal. line [%]`:`value ok [%]`),
-                              names_to = "group",
-                              values_to = "percentage")
-
   # make wide format ICP
   d_ICP_wide <- d %>%
     # adjust values < and > dl
@@ -435,22 +464,27 @@ check_limits %>% pivot_longer(., cols(`< cal. line [%]`:`value ok [%]`),
                 values_from = value) %>%
     view()
     
-
-# Check IB <10%
-
-# Check redox conditions (O2, NO3, Fe, Mn, NH4, SO4)
-
-# 
+d_ICP <- d %>% select(-value_dil)  
 
 
-# Combine all labresults
-d <- rbind(d_IC, d_DA, d_ALK, d_ICP)
+# Combine all labresults 
+d <- rbind(d_IC, d_DA, d_ALK, d_ICP) %>%
+  arrange(samplecode, parameter)
+
+# create wide format
+d_wide <- d %>%
+  mutate(parameter = paste0(parameter, " [", units, "]"),
+         value = paste(limit_symbol, value)) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  view()
 
 ###############################################################################
 # save data
 ###############################################################################
 
-write.xlsx(d, paste0(output, "Clean_data/lab_data.xlsx"))
+write.xlsx(d, paste0(output, "Clean_data/lab_data_long.xlsx"))
 write.xlsx(d_wide, paste0(output, "Clean_data/lab_data_wide.xlsx"))
 write.xlsx(d_ICP_wide, paste0(output, "Clean_data/lab_ICP_wide.xlsx"))
 

@@ -1,7 +1,8 @@
 #
-# Input: Survey data file for collection of field measurements
+# Input: Survey data file for collection of field measurements in Curacao, 
+# 2021-2022.
 #         
-# Output: Cleaned field measurements file
+# Output: Cleaned field measurements file for further hydrochemical analysis
 # 
 # Dependencies: none
 #
@@ -35,7 +36,6 @@ survey_old <- read.xlsx(paste0(input, "Hydrochemie/Survey_data.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
-
 
 ###############################################################################
 # edit data
@@ -89,7 +89,6 @@ d2 <- d1 %>%
          sample_depth = `Sample.depth.surface.(m).#2`,
          redox = `Redox.(mV).#2`)
 
-
 # merge two sample datasets and remove second samples columns
 d <- d1 %>%
   select(-c(setdiff(names(d1), names(d2)))) %>%
@@ -101,7 +100,7 @@ d <- d %>%
                                origin = "1899-12-30",
                                tz = "America/Curacao")) %>%
   mutate(date = strftime(datetime, format = "%d-%m-%Y"),
-         time = strftime(datetime, format = "%H:%M:%S"))
+         time = strftime(datetime, format = "%H:%M:%S", tz = "America/Curacao"))
 
 # check xy coordinates and add them from old survey file if necessary
 survey_coord <- survey_old %>%
@@ -122,7 +121,7 @@ d <- d %>%
 #          yc = ifelse(is.na(ycoord), y, ycoord)) %>%
 #   view()
   
-# reorder columns and remove redundant columns
+# reorder columns and select relevant columns for hydrochemistry
 d_set <- d %>%
   select(samplecode, Well.ID, xcoord, ycoord, date, time, 
          `Well.depth.below.surface.(m)`, `Depth.of.well.owner.(m)`, `Groundwater.level.below.surface.(m)`,
@@ -136,7 +135,6 @@ d_set <- d %>%
          `House./.location.waste.water.collection`, `Well.distance.from.cesspit.or.septic.tank.(m)`, `Well.distance.from.house.(m)`,
          `Note.on.sewage.(in.the.area)`, Note.on.the.well.type, Note.on.well.identification,
          Name.owner, Address, `Contact.mail/phone.number:`)
-
 
 ###############################################################################
 # save data

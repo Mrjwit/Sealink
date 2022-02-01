@@ -107,17 +107,6 @@ d_IC <- IC %>%
   # select only relevant columns
   select(samplecode, parameter, value, limit_symbol, detection_limit, units)
 
-## make wide format
-# d_IC_wide <- d_IC %>%
-#   mutate(parameter = paste(parameter, units)) %>%
-#   select(-c(detection_limit, units)) %>%
-#   pivot_wider(.,
-#               names_from = parameter,
-#               values_from = c(value, limit_symbol),
-#               names_glue = "{parameter}_{.value})") %>%
-#   select(1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15, 8)
-
-  
 ## Add results from diluted samples
 d_IC_dil <- IC_dil %>%
   # rename double column names
@@ -197,12 +186,15 @@ d_IC <- d %>%
   rename(limit_symbol = dt,
          value = waarde)
 
-## Perform quality control checks -> Maybe separate QC script better ##
-
-# EC measured vs EC calculated
-
-# 
-
+## make wide format  -> make wide format for all lab results
+# d_IC_wide <- d_IC %>%
+#   mutate(parameter = paste(parameter, units)) %>%
+#   select(-c(detection_limit, units)) %>%
+#   pivot_wider(.,
+#               names_from = parameter,
+#               values_from = c(value, limit_symbol),
+#               names_glue = "{parameter}_{.value})") %>%
+#   select(1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15, 8)
 
 # if(nrow(check) > 0) {
 #   stop("More than 1 value for .. in a sample")
@@ -383,6 +375,8 @@ ggplot(d %>% mutate(parameter = paste0(parameter, " [", units, "]")),
        aes(x = parameter, y = value, groep = parameter)) +
   #geom_boxplot(outlier.shape = NA) +
   stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot") +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "") +
   theme_bw() +
   facet_wrap(facets = "parameter", scales = "free")
 # boxplots with only values >dl
@@ -391,8 +385,22 @@ ggplot(d %>% mutate(parameter = paste0(parameter, " [", units, "]")) %>%
        aes(x = parameter, y = value, groep = parameter)) +
   #geom_boxplot(outlier.shape = NA) +
   stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot") +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "") +
   theme_bw() +
   facet_wrap(facets = "parameter", scales = "free")
+
+ggplot(d %>% filter(units != "mg/l"),
+         #mutate(parameter = paste0(parameter, " [", units, "]")) %>% 
+       aes(x = parameter, y = value, groep = parameter)) +
+  #geom_boxplot(outlier.shape = NA) +
+  stat_boxplot(geom = 'errorbar', width = 0.4) +
+  stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot", fill = "lightgrey", width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "concentration [ug/l]") +
+  coord_cartesian(ylim = c(0, 300)) +
+  theme_bw() 
+  #facet_wrap(facets = "parameter", scales = "free")
 
 # how many samples >dl and <cl per parameter
 check_limits <- d %>%

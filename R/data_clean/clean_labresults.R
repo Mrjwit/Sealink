@@ -497,7 +497,8 @@ d_ICP <- d %>% select(-value_dil)
 
 # Combine all labresults 
 d <- rbind(d_IC, d_DA, d_ALK, d_ICP) %>%
-  arrange(samplecode, parameter)
+  arrange(samplecode, parameter) %>%
+  mutate(notes = "")
 
 # create wide format
 d_wide <- d %>%

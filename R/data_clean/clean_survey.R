@@ -134,7 +134,8 @@ d_set <- d %>%
          Well.type, `Other.-.Well.type`, `Inner.well.diameter.(m)`, Casing.type.inner, Depth.casing.inner,
          `House./.location.waste.water.collection`, `Well.distance.from.cesspit.or.septic.tank.(m)`, `Well.distance.from.house.(m)`,
          `Note.on.sewage.(in.the.area)`, Note.on.the.well.type, Note.on.well.identification,
-         Name.owner, Address, `Contact.mail/phone.number:`)
+         Name.owner, Address, `Contact.mail/phone.number:`) %>%
+  arrange(samplecode)
 
 ###############################################################################
 # save data

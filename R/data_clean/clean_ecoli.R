@@ -49,25 +49,29 @@ d <- ecoli %>%
          units = "CFU/100 ml") %>%
   # rename columns
   rename(samplecode = Sample.nr,
-         value = E..coli) %>%
+         value = E..coli,
+         notes = Notes) %>%
   # select only relevant columns
-  select(samplecode, parameter, value, units, Notes)
+  select(samplecode, parameter, value, units, notes)
 
 # check duplo values
 duplos <- d %>%
-  filter(str_detect(Notes, "duplo")) %>%
+  filter(str_detect(notes, "duplo")) %>%
   view()
 
 d_set <- d %>%
   # select samples with duplo measurements
   filter(samplecode %in% duplos$samplecode) %>%
   # add column with duplos
-  mutate(duplo = ifelse(!str_detect(Notes, "duplo"),
+  mutate(duplo = ifelse(!str_detect(notes, "duplo"),
                         "origineel", "duplo")) %>%
-  mutate(duplo = ifelse(is.na(Notes), "origineel", duplo)) %>%
-  select(-Notes) %>%
+  mutate(duplo = ifelse(is.na(notes), "origineel", duplo)) %>%
+  select(-notes) %>%
   pivot_wider(values_from = value,
-              names_from = duplo)
+              names_from = duplo) %>%
+  # add average value from duplo's
+  mutate(value = (origineel + duplo) / 2,
+         notes = "value averaged from duplos")
 
 ggplot(d_set, aes(x = origineel, y = duplo)) +
   geom_point() +
@@ -77,14 +81,15 @@ ggplot(d_set, aes(x = origineel, y = duplo)) +
   theme_bw()
 
 # add average duplo values to final file
-d_avg <- d_set %>%
-  mutate(value = (origineel + duplo) / 2) %>%
-  mutate(Notes = NA) %>%
-  select(samplecode, parameter, value, units, Notes)
-
 d <- d %>%
   filter(!samplecode %in% duplos$samplecode) %>%
-  rbind(., d_avg)
+  rbind(., d_set %>% select(samplecode, parameter, value, units, notes)) %>%
+  # add columns that are present in other dataset to merge later
+  mutate(limit_symbol = "",
+         detection_limit = NA,
+         method = "Petrifilm plate") %>%
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes) %>%
+  arrange(samplecode)
   
 # Check if every sample has only 1 value
 check <- d %>%

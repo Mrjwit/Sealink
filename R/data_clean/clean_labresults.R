@@ -53,6 +53,8 @@ DA <- read.xlsx(paste0(input, "Lab/DA/PO4 & NH4 Iris.xlsx"),
                 sheet = "Summary")
 DA_alk <- read.xlsx(paste0(input, "Lab/DA/Alkalinity Iris.xlsx"),
                     sheet = "Summary")
+DA_alk_dil <- read.xlsx(paste0(input, "Lab/DA/Data alkalinity check DA.xlsx"),
+                        sheet = "Samples in DA")
 
 # Isotope data file
 
@@ -191,8 +193,9 @@ d_IC <- d %>%
   mutate(detection_limit = ifelse(dt == "<" & detection_limit > waarde,
                                   waarde, detection_limit),
          waarde = ifelse(is.na(waarde), value, waarde),
-         method = "IC") %>%
-  select(samplecode, parameter, waarde, dt, detection_limit, units, method) %>%
+         method = "IC",
+         notes = "") %>%
+  select(samplecode, parameter, waarde, dt, detection_limit, units, method, notes) %>%
   rename(limit_symbol = dt,
          value = waarde)
 
@@ -261,7 +264,8 @@ d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units, Test),
          # set negative values to 0, 
         ## still change values < dl to the dl ???
          value = ifelse(value < 0, 0, value),
-         method = "DA") 
+         method = "DA",
+         notes = "") 
 
 ###
 ### Change negative values and values < dl ???
@@ -320,7 +324,7 @@ if(nrow(check) > 0) {
 
 # reorder columns into final format
 d_DA <- d %>%
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes)
 
 # Clean up DA alkalinity set
 d_ALK <- DA_alk %>%
@@ -329,20 +333,24 @@ d_ALK <- DA_alk %>%
   # add samplecode to lab numbers 
   left_join(., lab_table %>% filter(analysis == "DA_alk") %>% select(-analysis),
             by = c("Sample.ID" = "labcode")) %>%
+  # add dilution factors 
+  left_join(., DA_alk_dil %>% select(Used.samples, Fverdunning),
+            by = c("samplecode" = "Used.samples")) %>%
   # remove rows with calibration standards and blanks 
   filter(!is.na(samplecode)) %>%
-  # add parameter column
+  # correct values for dilution factor and add additional columns
   mutate(parameter = "HCO3_lab",
          units = "mg/l",
-         value = Results,
+         value = Results * Fverdunning,
          limit_symbol = "",
-         method = "DA") %>%
+         method = paste("DA", Test),
+         notes = ifelse(samplecode == "GW031", "should have been diluted", "")) %>%
   mutate(detection_limit = case_when(
     Test == "ALKALIN 250" ~ 8, # this value is not right yet!!
     Test == "ALKALIN 550" ~ 16, # this value is from the Alkalinity 0-500 mg/l range
     TRUE ~ NA_real_ )) %>%
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
-  
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes) %>%
+  arrange(samplecode)
 
 #### ICP edits and checks ####
 
@@ -492,13 +500,13 @@ d_ICP_wide <- d %>%
   pivot_wider(names_from = parameter,
               values_from = value) 
     
-d_ICP <- d %>% select(-value_dil)  
+d_ICP <- d %>% select(-value_dil) %>%
+  mutate(notes = "")
 
 
 # Combine all labresults 
 d <- rbind(d_IC, d_DA, d_ALK, d_ICP) %>%
-  arrange(samplecode, parameter) %>%
-  mutate(notes = "")
+  arrange(samplecode, parameter) 
 
 # create wide format
 d_wide <- d %>%

@@ -325,7 +325,7 @@ d_DA <- d %>%
 # Clean up DA alkalinity set
 d_ALK <- DA_alk %>%
   # select relevant columns
-  select(Sample.ID, Results, Units) %>%
+  select(Sample.ID, Results, Units, Test) %>%
   # add samplecode to lab numbers 
   left_join(., lab_table %>% filter(analysis == "DA_alk") %>% select(-analysis),
             by = c("Sample.ID" = "labcode")) %>%
@@ -336,8 +336,11 @@ d_ALK <- DA_alk %>%
          units = "mg/l",
          value = Results,
          limit_symbol = "",
-         detection_limit = NA,
          method = "DA") %>%
+  mutate(detection_limit = case_when(
+    Test == "ALKALIN 250" ~ 8, # this value is not right yet!!
+    Test == "ALKALIN 550" ~ 16, # this value is from the Alkalinity 0-500 mg/l range
+    TRUE ~ NA_real_ )) %>%
   select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
   
 
@@ -480,15 +483,14 @@ d %>%
   summarise(n.dl = n_distinct(value[limit_symbol == "<"])) %>%
   view()
 
-  # make wide format ICP
-  d_ICP_wide <- d %>%
-    # adjust values < and > dl
-    mutate(parameter = paste(parameter, units),
-           value = paste(limit_symbol, value)) %>%
-    select(samplecode, parameter, value) %>%
-    pivot_wider(names_from = parameter,
-                values_from = value) %>%
-    view()
+# make wide format ICP
+d_ICP_wide <- d %>%
+  # adjust values < and > dl
+  mutate(parameter = paste(parameter, units),
+         value = paste(limit_symbol, value)) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) 
     
 d_ICP <- d %>% select(-value_dil)  
 
@@ -503,8 +505,7 @@ d_wide <- d %>%
          value = paste(limit_symbol, value)) %>%
   select(samplecode, parameter, value) %>%
   pivot_wider(names_from = parameter,
-              values_from = value) %>%
-  view()
+              values_from = value) 
 
 ###############################################################################
 # save data

@@ -135,7 +135,8 @@ d_set <- d %>%
          `House./.location.waste.water.collection`, `Well.distance.from.cesspit.or.septic.tank.(m)`, `Well.distance.from.house.(m)`,
          `Note.on.sewage.(in.the.area)`, Note.on.the.well.type, Note.on.well.identification,
          Name.owner, Address, `Contact.mail/phone.number:`) %>%
-  arrange(samplecode)
+  arrange(samplecode) %>%
+  unique()
 
 ###############################################################################
 # save data

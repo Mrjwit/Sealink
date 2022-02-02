@@ -231,24 +231,35 @@ d_DA <- DA %>%
   mutate(Results.2 = ifelse(str_detect(Units, "P"),
                             Results / (30.973762 / 94.9714),
                             Results / (14.0067 / 18.039))) 
-  # place different units and corresponding values in long format
+
+# place different units and corresponding values in long format
 d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units, Test),
-           d_DA %>% select(samplecode, parameter, Results.2, Units.2, Test) %>% rename(Results = Results.2,
-                                                                                       Units = Units.2)) %>%
+           d_DA %>% select(samplecode, parameter, Results.2, Units.2, Test) %>% 
+             rename(Results = Results.2, Units = Units.2)) %>%
   rename(value = Results,
          units = Units) %>%
   arrange(samplecode, parameter) %>%
-  # assume negative values to be <dl and add detection limits based on DA analysis method manual
+  # add detection limits based on the test used  
+  ### Still need to adjust these !!! using detectielimieten or rapportagegrenzen?? ###
+  mutate(detection_limit = case_when(
+                            Test == "NH4 10" ~ 1.0, # should be 0.2 or 0.04?
+                            Test == "o-PHOS 1" ~ 0.1, # should be .. or 0.013?
+                            Test == "o-PHOS 5" ~ 0.5, # should be ... 
+                            Test == "o-PHOS 20" ~ 1.0, # should be ...
+                            TRUE ~ NA_real_ )) %>%
+    # assume negative values to be <dl and add detection limits based on DA analysis method manual
   # where dl NH4 = 0.04 and dl PO4 = 0.013 -> CHECK!! 
-  mutate(limit_symbol = ifelse(value < 0,
+  mutate(limit_symbol = ifelse(value < detection_limit,
                                "<", ""),
+         # change detection limit for mg/l units
          detection_limit = case_when(
-                             parameter == "NH4" & units == "mg N/L " ~ 0.04,
-                             parameter == "NH4" & units == "mg/l" ~ 0.04 / (14.0067 / 18.039),
-                             parameter == "PO4" & units == "mg P/L " ~ 0.013,
-                             parameter == "PO4" & units == "mg/l" ~ 0.013 / (30.973762 / 94.9714),
+                             parameter == "NH4" & units == "mg N/L " ~ detection_limit,
+                             parameter == "NH4" & units == "mg/l" ~ detection_limit / (14.0067 / 18.039),
+                             parameter == "PO4" & units == "mg P/L " ~ detection_limit,
+                             parameter == "PO4" & units == "mg/l" ~ detection_limit / (30.973762 / 94.9714),
                              TRUE ~ NA_real_) %>% round(digits = 4),
-         # set negative values to 0
+         # set negative values to 0, 
+        ## still change values < dl to the dl ???
          value = ifelse(value < 0, 0, value),
          method = "DA") 
 

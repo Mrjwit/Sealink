@@ -45,13 +45,16 @@ d <- radon %>%
   # add parameter column with Radon
   mutate(parameter = "Rd",
          units = "Bq/l",
-         Notes = ifelse(is.na(Notes),
+         notes = ifelse(is.na(Notes),
                         paste("Sampling method:", Sampling.method),
-                        paste(Notes, "Sampling method:", Sampling.method))) %>%
+                        paste(Notes, "Sampling method:", Sampling.method)),
+         limit_symbol = "",
+         detection_limit = NA,
+         method = "RAD7 Big Bottle System") %>%
   # rename columns
   rename(value = `Rn.[Bq/L]`) %>%
   # select only relevant columns
-  select(samplecode, parameter, value, units, Notes)
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes)
 
 # some samples have 2 radon measurements, drop the lowest value
 duplos <- d %>%
@@ -77,7 +80,7 @@ d_set <- d %>%
   # remove samples with double measurements
   filter(!samplecode %in% duplos$samplecode) %>%
   # add records from duplos with highest values to dataset
-  rbind(., duplos %>% select(samplecode, parameter, value, units, Notes))
+  rbind(., duplos %>% select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes))
 
 # Check if every sample has only 1 value
 check <- d_set %>%

@@ -53,13 +53,18 @@ d <- alk %>%
   # rename columns
   rename(samplecode = Sample.code,
          "mg/l" = `C.[mg/l]`,
-         "meq/l" = `C.[meq/l]`) %>%
+         "meq/l" = `C.[meq/l]`,
+         notes = Notes) %>%
   # place different units in long format
   pivot_longer(., cols = c(`mg/l`, `meq/l`, mmol),
                values_to = "value",
                names_to = "units") %>%
+  # add limit symbol, detection limit column and method
+  mutate(limit_symbol = "",
+         detection_limit = NA,
+         method = "Field titration") %>%
   # select only relevant columns 
-  select(samplecode, parameter, value, units, Notes) 
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes) 
 
 # Check if every sample has only 1 value
 check <- d %>%

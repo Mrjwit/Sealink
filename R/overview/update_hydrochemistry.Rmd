@@ -1,0 +1,663 @@
+---
+title: "Update Hydrochemistry"
+author: "Mike Wit"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+# Loading packages
+if (!require("pacman")) install.packages("pacman")
+#pacman::p_load(tidyverse, dplyr, ggplot2, openxlsx, readr, ggmap, 
+#               sf, tmap, tmaptools, leaflet)
+pacman::p_load(tidyverse, openxlsx, cowplot, googleway,
+               ggrepel, ggspatial, libwgeom, sf, rnaturalearth,
+               rnaturalearthdata, rgeos, RColorBrewer,
+               kableExtra)
+```
+
+
+```{r, include=FALSE}
+# input path
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
+
+# loading in datasets
+# hydrochemical data 1977 and 1992
+data1977_1992 <- read.xlsx(paste0(input, "Clean_data/hydrochemistry1977-1992.xlsx"))
+  
+  
+# survey data 2021
+data2021 <- read.xlsx(paste0(input, "Raw_data/Hydrochemie/Survey_data.xlsx"),
+                      detectDates = TRUE) ### Actually wanna import clean dataset here!!!
+# Ecoli
+ecoli <- read.xlsx(paste0(input, "Raw_data/E.coli/E.coli.xlsx"),
+                   startRow = 2) %>%
+  rename(sample = Sample.nr)
+# Radon read
+radon <- read.xlsx(paste0(input, "Raw_data/Radon/Radon_measurements.xlsx"))
+# Alkalinity titrations
+alkalinity <- read.xlsx(paste0(input, "Raw_data/Alkalinity/Alkalinity_titration.xlsx"),
+                        startRow = 10)
+
+# importing GIS layers
+input_GIS <- "C:/Users/mikewit/Documents/SEALINK/GIS/SEALINK/"
+cur_coastline <- st_read(paste0(input_GIS,
+                                "Layers/Topography/CUR_Coastline.shp"))
+cur_geology <- st_read(paste0(input_GIS,
+                                "Layers/Geology/Geology Shapefile EATH.shp"))
+cur_zonalmap <- st_read(paste0(input_GIS,
+                                "Layers/Landuse/Curacao_EOP.shp"))
+
+``` 
+
+### Introduction
+
+This document is used to keep track of the water sampling campaign on Curacao within the SEALINK project. It displays several overviews of collected field data, including sample locations, crude statistics and concentration maps. This document is automatically updated weekly. 
+
+```{r, include=FALSE}
+
+## Editing dataset
+
+data <- data2021 %>%
+  drop_na(sample) 
+data <- data[, colSums(is.na(data)) < nrow(data)]
+data <- data %>%
+  mutate(watercode = substr(sample, start = 1, stop = 2))
+
+# voeg watertypes toe
+data$watertype <- data$watercode %>% 
+  recode("GW" = "groundwater",
+         "SR" = "surfacewater",
+         "SW" = "surfacewater", 
+         "SP" = "groundwater",
+         "WW" = "wastewater",
+         "RW" = "rainwater",
+         "TW" = "tapwater",
+         "SEA" = "seawater")
+
+data$subtype <- data$watercode %>% 
+  recode("GW" = "groundwater",
+         "SR" = "surface runoff",
+         "SW" = "surfacewater", 
+         "SP" = "spring",
+         "WW" = "wastewater",
+         "RW" = "rainwater",
+         "TW" = "tapwater",
+         "SEA" = "seawater")
+
+# Voeg E.coli toe
+# maar 1 waarde per sample, check dit
+ecoli %>%
+  group_by(sample) %>%
+  summarise(nrwaardes = n_distinct(E..coli)) %>%
+  filter(nrwaardes > 1) %>%
+  head()
+
+data <- left_join(data, ecoli %>% select(sample, E..coli))
+# Voeg HCO3 toe
+# pak alleen tweede record met meest nauwkeurige titratie
+alk <- alkalinity %>%
+  rename(sample = Sample.code,
+         `HCO3` = `C.[mg/l]`) %>%
+  group_by(sample) %>%
+  slice_tail()
+data <- left_join(data, alk %>% select(sample, HCO3))
+
+# Voeg Radon toe
+
+
+```
+
+
+```{r, echo=FALSE}
+# Maak bestand met verschillende meetjaren 1977, 1992 en 2021
+DataI <- data2021 %>% 
+  select(-c(sample_code_3, sample_code_4)) %>%
+  left_join(., alk %>% select(sample, HCO3)) %>%
+  select(date, putcode, xcoord, ycoord, geologie, land_use_own,
+                               putsoort, `open/closed`,
+                               gwl, well_depth, well_depth_owner,
+                               diameter_inner, casing_inner,diameter_outer, casing_outer,depth_casing_outer,
+                               sample, method_1,sample_depth_1,
+                               DO_1_mgL, DO_1_sat,EC_1_uS, EC_1_mS,
+                               pH_1, T_1, `NO3-N_1`, NO3_1, `NO2-N_1`, NO2_1, HCO3, 
+                               redox_1, second_sample, 
+                               wastewater, well_distance_house, `well_distance_cespit/septik`, state_septic,
+                               pump,use_pump, frequently_pumped, use_of_pump,pump_discharge,
+                               nearby_wells, number_nearby_wells,
+                               rain_conditions, 
+                               name_owner, contact, 
+                               note_identification, note_well_type, note_pumping, note_sewage, note_sample_1)
+
+# put 2021 in format of 1977/1992
+Data2021_sub <- DataI %>% 
+  filter_at(vars(sample),all_vars(!is.na(.))) %>%
+  #add collomn of year
+  mutate(year = 2021) %>%
+  #Add a colomn of sample type to the data
+  mutate(Sample_type = str_sub(sample, 1, 2)) %>%
+  #change here values of parameters to numerical values 
+  #change NO-2_n1 to numeric
+  mutate( `NO2-N_1` = as.numeric(ifelse(`NO2-N_1` == ">3", 3,`NO2-N_1`))) %>%
+  #change to long format instead of wide 
+  pivot_longer(cols =  DO_1_mgL:redox_1,
+               names_to = "parameter",
+               values_to = "value") %>%
+  #Add here a colomn with detection limits based on changes of parameters to numeric 
+  # add column with detection limits (dl). Values of 3 for NO2-N_1 were >3
+  mutate(dl = ifelse(parameter == "NO2-N_1" & value == 3,">", "")) %>%
+  #change parameter name
+  mutate(parameter = recode(parameter,
+         "pH_1" = "pH",
+         "T_1" = "Temp",
+         "redox_1" = "pE",
+         "NO3-N_1" = "NO3-N",
+         "NO2-N_1" = "NO2-N",
+         "NO3_1" = "NO3",
+         "NO2_1" = "NO2",
+         "DO_1_mgL" = "DO",
+         "DO_1_sat" = "DO_sat",
+         "EC_1_uS" = "EC",
+         "EC_1_mS" = "EC_mS")) %>%
+  # add units
+  mutate(units = case_when(
+    parameter == "EC" ~ "uS/cm",
+    parameter == "EC_mS" ~ "mS/cm",
+    parameter == "pH" ~ "",
+    parameter == "DO_sat" ~ "%",
+    parameter == "Temp" ~ "Degrees Celcius",
+    parameter == "pE" ~ "mV",
+    TRUE ~ "mg/l"),
+  #change geologie naar de geologie names of 1970 & 1990 
+      geologie = case_when(
+    geologie == "Limestones" ~ "L",
+    geologie == "Limestones_and_Marls" ~ "L",
+    geologie == "Knip_group" ~ "K",
+    geologie == "Midden_Curacao_formation" ~ "M",
+    geologie == "Curacao_lava_formation" & xcoord >= -69.009065 ~ "DO",
+    geologie == "Curacao_lava_formation" & xcoord < -69.009065 ~ "DW",
+    TRUE ~ "K")) # moet eigenlijk other zijn
+Data2021_sub <- Data2021_sub %>%
+  #change putsoort naar de putsoort names of 1970 & 1990
+  #mutate(putsoort = ifelse(putsoort == "Borehole_well", "?", ifelse(putsoord == "Hand_dug_well", "?", putsoort)))
+  #change colom order to order 1970 &1990
+  filter(Sample_type == "GW") %>%
+  # same layout as 70s 90s
+  select(putcode, xcoord, ycoord, geologie, putsoort,
+         year, date, sample, parameter, dl, value, units)
+
+# join datasets 1977, 1992, 2021
+data_GW <- rbind(data1977_1992 %>% select(-c(lat, lon, missingcoord)),
+                 Data2021_sub) %>%
+  # waarde 0 voor pH in 1992 aanpassen
+  mutate(value = ifelse(year == 1992 & parameter == "pH" & value == 0,
+                        NA, value),
+  # waarde -999 voor temp 1992 aanpassen       
+         value = ifelse(year == 1992 & parameter == "Temp" & value == -999, NA, value),
+  # units van pE kloppen niet in 1992
+  units = ifelse(year == 1992 & parameter == "pE",
+                 "mV", units),
+  # waarde -999 voor pE in 1992
+  value = ifelse(year == 1992 & parameter == "pE" & value == -999,
+                 NA, value),
+  # waarde -999 voor HCO3
+  value = ifelse(year == 1992 & parameter == "HCO3" & value == -999,
+                 NA, value))
+
+```
+
+### Overview water sample types
+
+```{r, echo=FALSE}
+res <- data %>%
+  group_by(watertype, subtype, watercode) %>%
+  summarise('nr.locations' = n_distinct(xcoord),
+            'nr.samples' = n_distinct(sample)) 
+
+res <- bind_rows(res, data.frame(watertype = "",
+                             subtype = "",
+                             watercode = "TOTAL",
+                             'nr.locations' = colSums(res[, 4]),
+                             'nr.samples' = colSums(res[, 5])))
+res %>%
+  kbl %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+``` 
+
+### Overview groundwater locations per geology and year
+The areas per geological formation still need to be included. 
+
+```{r, echo=FALSE}
+res <- data_GW %>%
+  mutate(geologie = recode(geologie,
+    "DO" = "Diabaas Oost",
+    "DW" = "Diabaas West",
+    "K" = "Knip-Group",
+    "M" = "Midden Formation",
+    "L" = "Limestones")) %>%
+  group_by(geologie, year) %>%
+  summarise(area = "",
+            "nr.locations" = n_distinct(xcoord)) %>%
+  pivot_wider(names_from = year,
+              values_from = nr.locations)
+
+res <- res %>%
+  mutate(`1977 %` = ifelse(is.na(`1977`), "-",
+                           paste(round(`1977` / sum(res$`1977`, na.rm = T) * 100), "%")),
+         `1992 %` = ifelse(is.na(`1992`), "-",
+                           paste(round(`1992` / sum(res$`1992`, na.rm = T) * 100), "%")),
+         `2021 %` = ifelse(is.na(`2021`), "-",
+                           paste(round(`2021` / sum(res$`2021`, na.rm = T) * 100), "%"))) %>%
+  select(geologie, area, `1977`, `1977 %`, `1992`, `1992 %`, `2021`, `2021 %`)
+  
+res %>%
+  kbl %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+``` 
+
+### Toevoegen bar diagram van aantallen samples en locaties per geology per jaar
+...
+...
+
+### Overview samples per land use type
+The following table gives the locations and collected samples per observed land use. At the moment of writing, there is no land use map available for Curacao. There is a zonal-planning map available that displayes the reserved land for specific purposes. Within WP4 the plan is to develop up-to-date land use and land cover maps, which will be used later on. 
+
+NA's in the table still need to be checked..
+
+```{r, echo=FALSE}
+res <- data %>%
+  group_by(land_use_own) %>%
+  summarise("# locations" = n_distinct(xcoord),
+            "# samples" = n_distinct(sample)) 
+res %>%
+  kbl %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+``` 
+
+
+### statistics of parameters between years (1977, 1992, 2021)
+```{r, echo=FALSE}
+# boxplots van beschikbare parameters
+set <- data_GW %>% 
+  filter(parameter %in% c("EC", "pH", "pE", "NO3", "NO2", "NH4", "DO", "HCO3")) %>%
+  mutate(param = ifelse(parameter != "pH",
+                        paste0(parameter, " [", units, "]"),
+                        parameter))
+
+ggplot(data = set,  
+       aes(x = factor(year),
+           y = value)) +
+  stat_boxplot(geom = 'errorbar', width = 0.4) +
+  geom_boxplot(fill = "lightgrey", width = 0.6) +
+  #geom_point(alpha = 0.4) +
+  #stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "") + 
+  theme_bw() +
+  facet_wrap(~param, scales = "free")
+
+
+```
+
+
+
+### statistics of parameters per geology in 2021
+These still need to be refined and checked..
+DO = Diabaas Oost
+DW = Diabaas West
+K = Knip Group
+M = Midden Curacao Formation
+L = Limestones (not sampled)
+also make these for landuse types.
+
+
+```{r, echo=FALSE}
+# boxplots van beschikbare parameters
+set <- data_GW %>% 
+  filter(parameter %in% c("EC", "pH", "pE", "NO3", "NO2", "NH4", "DO", "HCO3")) %>%
+  mutate(param = ifelse(parameter != "pH",
+                        paste0(parameter, " [", units, "]"),
+                        parameter))
+
+ggplot(data = set %>% filter(year == 2021),  
+       aes(x = geologie,
+           y = value)) +
+  stat_boxplot(geom = 'errorbar', width = 0.4) +
+  geom_boxplot(width = 0.6) +
+  #geom_point(alpha = 0.4) +
+  #stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "") + 
+  theme_bw() +
+  facet_wrap(~param, scales = "free")
+
+
+```
+
+### Plots EC per well
+
+```{r}
+set <- data_GW %>%
+  filter(parameter == "EC", 
+         year != 2021) %>%
+  group_by(putcode) %>%
+  mutate(aantal.jaren = n_distinct(year)) %>%
+  ungroup() %>%
+  filter(aantal.jaren > 1) 
+
+ggplot(data = set,  
+       aes(x = as.factor(year),
+           y = value,
+           group = putcode)) +
+  geom_point() +
+  geom_line() +
+  #stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "EC [uS/cm]") + 
+  theme_bw()
+  #facet_wrap(~putcode, scales = "free")
+
+ggplot(data = set,  
+       aes(x = as.factor(year),
+           y = value)) +
+  geom_point() +
+  geom_line() +
+  #stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "EC [uS/cm]") + 
+  theme_bw() +
+  facet_wrap(~putcode, scales = "free",
+             ncol = 10)
+
+# losse plotjes
+for(i in unique(set$putcode)) {
+  
+  ggplot(data = set %>% filter(putcode == i),  
+       aes(x = year,
+           y = value)) +
+  geom_point() +
+  geom_line() +
+  #stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "EC [uS/cm]") + 
+  theme_bw()
+  #facet_wrap(~putcode, scales = "free")
+  
+}
+
+
+
+
+```
+
+
+### Maps
+```{r, include=FALSE}
+theme_set(theme_bw())
+
+data <- data %>%
+  mutate(samplenr = str_sub(sample, 3, 5))
+
+pts <- st_as_sf(data, coords = c("xcoord", "ycoord"),
+                crs = 4326, agr = "constant") 
+```
+
+```{r, echo=FALSE}
+# Map with locations of watertypes
+ggplot(data = pts) +
+  geom_sf(data = cur_coastline, fill = "antiquewhite") +
+  geom_sf(aes(shape = subtype, color = subtype)) +
+  # geom_text_repel(data = data, aes(x = xcoord, 
+  #                                  y = ycoord, 
+  #                                  label = samplenr),
+  #                 fontface = "bold", size = 3) + 
+  scale_shape_manual("watertype", 
+                     values = c("groundwater" = 17,
+                                "rainwater" = 18,
+                                "spring" = 15,
+                                "surface runoff" = 16,
+                                "wastewater" = 13)) +
+  scale_color_manual("watertype",
+                     values = c("groundwater" = "darkblue",
+                                "rainwater" = "lightblue",
+                                "spring" = "blue",
+                                "surface runoff" = "green",
+                                "wastewater" = "darkred")) +
+  scale_x_continuous("") +
+  scale_y_continuous("") +
+  ggtitle("Location of water samples") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+
+```
+
+```{r, echo=FALSE}
+# Map with locations of watertypes with geology
+ggplot(data = pts) +
+  geom_sf(data = cur_geology, aes(fill = Field), alpha = 0.7) +
+  geom_sf(aes(shape = subtype, color = subtype)) +
+  # geom_text_repel(data = data, aes(x = xcoord, 
+  #                                  y = ycoord, 
+  #                                  label = samplenr),
+  #                 fontface = "bold", size = 3) + 
+  scale_shape_manual("watertype", 
+                     values = c("groundwater" = 17,
+                                "rainwater" = 18,
+                                "spring" = 15,
+                                "surface runoff" = 16,
+                                "wastewater" = 13)) +
+  scale_color_manual("watertype",
+                     values = c("groundwater" = "darkblue",
+                                "rainwater" = "lightblue",
+                                "spring" = "blue",
+                                "surface runoff" = "green",
+                                "wastewater" = "darkred")) +
+  scale_x_continuous("") +
+  scale_y_continuous("") +
+  ggtitle("Location of water samples") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+```
+
+Map with locations of watertypes with the zonal planning map of Curacao.
+The scale and legend still need to be adjusted.
+```{r, echo=FALSE}
+# Map with locations of watertypes with zonal map
+ggplot(data = pts) +
+  geom_sf(data = cur_zonalmap, aes(fill = as.factor(EOP)), alpha = 0.7) +
+  geom_sf(aes(shape = subtype, color = subtype)) +
+  # geom_text_repel(data = data, aes(x = xcoord, 
+  #                                  y = ycoord, 
+  #                                  label = samplenr),
+  #                 fontface = "bold", size = 3) + 
+  scale_shape_manual("watertype", 
+                     values = c("groundwater" = 17,
+                                "rainwater" = 18,
+                                "spring" = 15,
+                                "surface runoff" = 16,
+                                "wastewater" = 13)) +
+  scale_color_manual("watertype",
+                     values = c("groundwater" = "darkblue",
+                                "rainwater" = "lightblue",
+                                "spring" = "blue",
+                                "surface runoff" = "green",
+                                "wastewater" = "darkred")) +
+  scale_x_continuous("") +
+  scale_y_continuous("") +
+  ggtitle("Location of water samples") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+
+```
+
+```{r, echo=FALSE}
+# Map of EC values
+
+pts <- pts %>%
+  mutate(EC = case_when(
+    EC_1_uS < 1000 ~ "< 1,000 uS/cm",
+    EC_1_uS >= 1000 & EC_1_uS < 3000 ~ "1,000 - 3,000 uS/cm",
+    EC_1_uS >= 3000 & EC_1_uS < 5000 ~ "3,000 - 5,000 uS/cm",
+    EC_1_uS >= 5000 & EC_1_uS < 10000 ~ "5,000 - 10,000 uS/cm",
+    EC_1_uS >= 10000 & EC_1_uS < 20000 ~ "10,000 - 20,000 uS/cm",
+    TRUE ~ "> 20,000 uS/cm"))
+
+pts$EC <- factor(pts$EC, levels = c("< 1,000 uS/cm",
+                                    "1,000 - 3,000 uS/cm",
+                                    "3,000 - 5,000 uS/cm", 
+                                    "5,000 - 10,000 uS/cm", 
+                                    "10,000 - 20,000 uS/cm", 
+                                    "> 20,000 uS/cm"))
+
+ggplot(data = pts) +
+  geom_sf(data = cur_coastline, fill = "antiquewhite") +
+  geom_sf(aes(fill = EC), 
+          colour = "black",
+          pch = 21,
+          size = 2) +
+  # scale_shape_manual("watertype", 
+  #                    values = c("groundwater" = 17,
+  #                               "rainwater" = 18,
+  #                               "spring" = 15,
+  #                               "surface runoff" = 16,
+  #                               "wastewater" = 13)) + 
+  #scale_fill_distiller("EC [uS/cm]", palette = "RdYlBu",
+  #                     values = c(0, 0.7, 1)) + 
+  # scale_fill_manual("EC",
+  #                    values = c("< 1,000 uS/cm" = "lightblue",
+  #                               "1,000-3,000 uS/cm" = "blue",
+  #                               "3,000-5,000 uS/cm" = "green",
+  #                               "5,000-10,000 uS/cm" = "yellow",
+  #                               "10,000-20,000 uS/cm" = "orange",
+  #                               "> 20,000 uS/cm" = "red")) +
+    scale_fill_manual("EC",
+                     values = c("blue", 
+                                "lightblue",
+                                "green",
+                                "yellow",
+                                "orange",
+                                "red")) +
+  ggtitle("Electrical Conductivity of groundwater") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+```
+
+```{r, echo=FALSE}
+ggplot(data = pts %>% filter(watertype == "groundwater")) +
+  geom_sf(data = cur_coastline, fill = "antiquewhite") +
+  geom_sf(aes(fill = NO3_1), 
+          colour = "black",
+          pch = 21,
+          size = 2) +
+  scale_fill_distiller("NO3 [mg/l]", palette = "Spectral") + 
+  ggtitle("Nitrate in groundwater") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+```
+
+Deze assen nog aanpassen
+
+```{r, echo=FALSE}
+# Map of E.coli values
+my_breaks = c(0, 10 ,100, 1000, 10000, 100000)
+
+ggplot(data = pts) +
+  geom_sf(data = cur_coastline, fill = "antiquewhite") +
+  geom_sf(aes(fill = E..coli), 
+          colour = "black",
+          pch = 21,
+          size = 2) +
+  scale_fill_distiller("E.coli [CFU/100ml]", 
+                       palette = "RdPu",
+                       direction = 1,
+                       trans = 'log') + 
+  ggtitle("E.coli in water samples") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+```
+
+
+### Radon 
+
+
+```{r, echo=FALSE, fig.cap="Radon measurements in seawater"} 
+#knitr::include_graphics("C:/Users/mikewit/Documents/SEALINK/Pictures/Measurements/Radon/Radon_seawater.jpg")
+
+
+
+```
+
+#### Radon concentrations
+
+```{r, echo=FALSE}
+n_fun <- function(x) {
+  return(c(y = -0.5,
+           label = length(x)))
+}
+
+ggplot(data = radon,
+       aes(x = Sample.type, y = `Rn.[Bq/L]`)) +
+  stat_boxplot(geom = 'errorbar', width = 0.4) + 
+  geom_boxplot(fill = "lightgrey", width = 0.6) +
+  stat_summary(fun.data = n_fun, geom = "text", hjust = 0.5) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "Radon [Bq/l]") +
+  theme_bw()
+  
+radon %>%
+  group_by(Sample.type) %>%
+  summarise(nr = n(),
+            p10 = quantile(`Rn.[Bq/L]`, 0.1),
+            p25 = quantile(`Rn.[Bq/L]`, 0.25),
+            med = median(`Rn.[Bq/L]`),
+            avg = mean(`Rn.[Bq/L]`),
+            p75 = quantile(`Rn.[Bq/L]`, 0.75),
+            p90 = quantile(`Rn.[Bq/L]`, 0.90)) %>%
+  kbl %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+  
+```
+

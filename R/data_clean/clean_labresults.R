@@ -76,7 +76,7 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 #### IC edits and checks ####
 
 oldnames <- names(IC)
-newnames <- c("ID", "Fl", "Cl", "NO2", "Br", "NO3", "PO4", "SO4", 
+newnames <- c("ID", "F", "Cl", "NO2", "Br", "NO3", "PO4", "SO4", 
               "dilution_factor", "ID2", "Fl_round", "Cl_round", "NO2_round", 
               "Br_round", "NO3_round", "PO4_round", "SO4_round")
 remove.list <- paste(c("Estim", "St", "Blanco", "QS STD anion"), collapse = '|')

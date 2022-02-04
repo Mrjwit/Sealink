@@ -1,0 +1,532 @@
+---
+title: "Quality checks hydrochemical data"
+author: "Mike Wit"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_notebook
+---
+
+```{r, include = FALSE}
+## Initialization
+# Loading packages
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, openxlsx, ggmap, hrbrthemes, viridis,
+               sf, leaflet, data.table, cowplot, data.table)
+
+## Loading data
+# set data file location
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
+
+# load cleaned data
+alk <- read.xlsx(paste0(input, "alkalinity_clean.xlsx"))
+ecoli <- read.xlsx(paste0(input, "ecoli_clean.xlsx"))
+radon <- read.xlsx(paste0(input, "radon_clean.xlsx"))
+labdata <- read.xlsx(paste0(input, "lab_data_long.xlsx"))
+metadata <- read.xlsx(paste0(input, "survey_clean.xlsx"))
+
+# output file location
+output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
+
+## Editing data
+# put metadata of field measurements in long format so that in can be merged
+d <- metadata %>%
+  select(samplecode, EC_uS, pH, Temp, DO, DO_sat, redox, NO3, NO2) %>%
+  rename(NO3_field = NO3,
+         NO2_field = NO2) %>%
+  pivot_longer(cols = EC_uS:NO2_field,
+               names_to = "parameter",
+               values_to = "value") %>%
+  mutate(limit_symbol = "",
+         detection_limit = NA,
+         units = case_when(
+           parameter == "EC_uS" ~ "uS/cm",
+           parameter == "pH" ~ "",
+           parameter == "Temp" ~ "Degrees Celcius",
+           parameter == "DO" ~ "mg/l",
+           parameter == "DO_sat" ~ "%",
+           parameter == "redox" ~ "mV",
+           parameter == "NO3_field" ~ "mg/l",
+           parameter == "NO2_field" ~ "mg/l",
+           TRUE ~ "missing" ),
+         method = ifelse(parameter %in% c("NO3_field", "NO2_field"), "Nitrate strip",
+                          "Ponsol sensors"),
+         notes = "")
+
+# Merge all data cleaned datasets but keep metadata separated for now
+data <- rbind(labdata, alk %>% filter(units == "mg/l"), ecoli, radon, d) %>%
+  arrange(samplecode, parameter) %>%
+  mutate(watercode = substr(samplecode, start = 1, stop = 2))
+
+# add watertypes 
+data$watertype <- data$watercode %>% 
+  recode("GW" = "groundwater",
+         "SR" = "surfacewater",
+         "SW" = "surfacewater", 
+         "SP" = "groundwater",
+         "WW" = "wastewater",
+         "RW" = "rainwater",
+         "TW" = "tapwater",
+         "SE" = "seawater")
+
+data$subtype <- data$watercode %>% 
+  recode("GW" = "groundwater",
+         "SR" = "surface runoff",
+         "SW" = "surfacewater", 
+         "SP" = "spring",
+         "WW" = "wastewater",
+         "RW" = "rainwater",
+         "TW" = "tapwater",
+         "SE" = "seawater")
+
+```
+
+
+## Checks hydrochemical data
+
+# Field Alkalinity titration vs DA Alkalinity
+
+
+```{r}
+d <- data %>%
+  filter(parameter %in% c("HCO3", "HCO3_lab")) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  filter(!is.na(HCO3_lab)) %>%
+  mutate(perc_dev = (HCO3_lab - HCO3) / HCO3 * 100) %>%
+  mutate(Deviation = ifelse(perc_dev <= 20 & perc_dev >= -20, "acceptable", "not acceptable"))
+
+ggplot(d, aes(x = HCO3_lab, y = HCO3)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(name = "Alkalinity DA lab [mg/l]",
+                     limits = c(0, 2520)) +
+  scale_y_continuous(name = "Alkalinity field titration [mg/l]",
+                     limits = c(0, 2520)) +
+  theme_bw()
+
+ggplot(d %>% filter(!is.na(HCO3_lab), !is.na(HCO3)), aes(x = HCO3, y = perc_dev, colour = Deviation)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = 20, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = -20, linetype = "dashed", color = "red") +
+  scale_x_continuous(name = "Alkalinity field titration [mg/l]") +
+  scale_y_continuous(name = "Deviation [%]") +
+  scale_colour_manual(values = c("steelblue", "tomato")) +
+  theme_bw()
+```
+
+# Field NO3 strips vs NO3 from IC
+In the field, NO3 was determined using indicator strips for NO3-N and NO2-N. 
+
+
+```{r}
+d <- data %>%
+  filter(parameter %in% c("NO3", "NO3_field")) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  #filter(!is.na(HCO3_lab)) %>%
+  mutate(perc_dev = (NO3_field - NO3) / NO3_field * 100) %>%
+  mutate(Deviation = ifelse(perc_dev <= 20 & perc_dev >= -20, "acceptable", "not acceptable"))
+
+ggplot(d, aes(x = NO3, y = NO3_field)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(name = "NO3 IC lab [mg/l]") +
+  scale_y_continuous(name = "NO3 field strips [mg/l]") +
+  theme_bw()
+
+ggplot(d %>% filter(!is.na(NO3_field), !is.na(NO3)), aes(x = NO3_field, y = perc_dev, colour = Deviation)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = 20, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = -20, linetype = "dashed", color = "red") +
+  scale_x_continuous(name = "NO3 field strips [mg/l]") +
+  scale_y_continuous(name = "Deviation [%]") +
+  scale_colour_manual(values = c("steelblue", "tomato")) +
+  theme_bw()
+```
+
+# IC PO4 vs DA PO4 /  ICP P
+## compare PO4 from IC and DA
+```{r}
+d <- data %>%
+  mutate(value = ifelse(parameter == "P", value / (30.973762 / 94.9714),
+                        value),
+         parameter = ifelse(parameter == "P", "PO4", parameter)) %>% 
+  filter(parameter == "PO4", units == "mg/l") %>%
+  mutate(parameter = paste(parameter, method, sep = "_")) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+# Plot PO4 from IC against DA
+ggplot(d, aes(x = PO4_DA, y = PO4_IC)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(-0.2, 30),
+                     name = "PO4 DA [mg/l]") +
+  scale_y_continuous(limits = c(-0.2, 30),
+                     name = "PO4 IC [mg/]") +
+  theme_bw()
+
+# Plot PO4 from ICP-MS against DA
+ggplot(d, aes(x = PO4_DA, y = `PO4_ICP-MS`)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(-0.2, 30),
+                     name = "PO4 DA [mg/l]") +
+  scale_y_continuous(limits = c(-0.2, 30),
+                     name = "P/PO4 ICP-MS [mg/]") +
+  theme_bw()
+# Plot PO4 from IC against ICP-MS
+ggplot(d, aes(x = PO4_IC, y = `PO4_ICP-MS`)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(-0.2, 30),
+                     name = "PO4 IC [mg/l]") +
+  scale_y_continuous(limits = c(-0.2, 30),
+                     name = "P/PO4 ICP-MS [mg/]") +
+  theme_bw()
+
+# ggplot(d, aes(x = samplecode, y = value, fill = method)) +
+#   geom_bar(position = "dodge", stat = "identity") 
+
+
+```
+# IC SO4 vs ICP S
+```{r}
+d <- data %>%
+  mutate(value = ifelse(parameter == "S", value / (32.065 / 96.06),
+                        value),
+         parameter = ifelse(parameter == "S", "SO4", parameter)) %>% 
+  filter(parameter == "SO4", units == "mg/l") %>%
+  mutate(parameter = paste(parameter, method, sep = "_")) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+# Plot PO4 from IC against DA
+ggplot(d, aes(x = `SO4_ICP-MS`, y = SO4_IC)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(-0.2, 30),
+                     name = "S/SO4 ICP-MS [mg/l]") +
+  scale_y_continuous(limits = c(-0.2, 30),
+                     name = "SO4 IC [mg/]") +
+  theme_bw()
+
+
+```
+
+
+
+# Field EC vs sum anions/ cations
+```{r}
+an <- c("Cl", "HCO3", "NO3", "NO2", "PO4", "SO4", "Br", "F")
+cat <- c("Na", "Ca", "Mg", "Fe", "K", "Mn")
+
+d <- data %>%
+  filter(parameter %in% c(an, "EC_uS")) %>%
+  filter(method != "DA") %>%
+  # change mg/l to meq/l
+  mutate(meql = case_when(
+    parameter == "Cl" ~ value / 35.453,
+    parameter == "HCO3" ~ value / 61.0168,
+    parameter == "NO3" ~ value / 62.0049,
+    parameter == "NO2" ~ value / 46.0055,
+    parameter == "PO4" ~ value / 94.9714 * 3,
+    parameter == "SO4" ~ value / 96.06 * 2,
+    parameter == "Br" ~ value / 79.904,
+    parameter == "F" ~ value / 18.998403,
+    parameter == "EC_uS" ~ value,
+    TRUE ~ NA_real_ )) %>%
+  select(samplecode, parameter, meql) %>%
+  pivot_wider(names_from = parameter,
+              values_from = meql) %>%
+  filter(!is.na(Cl)) %>%
+  mutate(sum_an = rowSums(select(., Br, Cl, HCO3, NO2, NO3, PO4, SO4), na.rm = T),
+         EC_100 = EC_uS / 100) %>% # this is only valid up to 1500 uS/cm !
+  mutate(b = ifelse(sum_an <= 30, 100, 133.605),
+         c = ifelse(sum_an < 3, 1.00, 
+                    ifelse(sum_an > 30, 0.9058, 0.931))) %>%
+  mutate(EC_calc = b * (sum_an) ^ c)
+
+ggplot(d, aes(x = sum_an, y = EC_100)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") + 
+  geom_smooth(method = "loess") +
+  scale_x_continuous(name = "Sum anions [meq/l]") +
+  scale_y_continuous(name = "EC / 100 [uS/cm]") +
+  theme_bw()
+
+ggplot(d, aes(x = sum_an, y = EC_100)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") + 
+  geom_smooth(method = "loess") +
+  scale_x_continuous(name = "Sum anions [meq/l]") +
+  scale_y_continuous(name = "EC / 100 [uS/cm]") +
+  coord_cartesian(xlim = c(0, 100),
+                  ylim = c(0, 100)) +
+  theme_bw()
+```
+
+For EC values up to 1500 uS/cm the relationship of sum anions = sum cation ~ EC/100 (uS/cm) will show good results. However,
+with increasing concentrations this relationship becomes non-linear and the conductivity decreases relative to the increasing concentrations. Reasons are ion-association and electrostatic shielding effects which increase with concentration (Appelo & Postma). 
+  (Stufyzand ...)
+
+
+
+
+```{r}
+ggplot(d, aes(x = EC_calc, y = EC_uS)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") + 
+  geom_smooth(method = "lm") +
+  scale_x_continuous(name = "Calculated EC [uS/cm]") +
+  scale_y_continuous(name = "EC field [uS/cm]") +
+  # coord_cartesian(xlim = c(0, 5000),
+  #                 ylim = c(0, 5000)) +
+  theme_bw()
+
+```
+
+
+
+# Check Ionic balance <= 10% based on major cations and anions from the lab
+```{r}
+an <- c("Cl", "HCO3", "NO3", "NO2", "PO4", "SO4", "Br", "Fl")
+cat <- c("Na", "Ca", "Mg", "Fe", "K", "Mn")
+
+d <- data %>%
+  filter(parameter %in% c(an, "EC_uS")) %>%
+  filter(method != "DA") %>%
+  # change mg/l to meq/l for anions
+  mutate(meql = case_when(
+    parameter == "Cl" ~ value / 35.453,
+    parameter == "HCO3" ~ value / 61.0168,
+    parameter == "NO3" ~ value / 62.0049,
+    parameter == "NO2" ~ value / 46.0055,
+    parameter == "PO4" ~ value / 94.9714 * 3,
+    parameter == "SO4" ~ value / 96.06 * 2,
+    parameter == "Br" ~ value / 79.904,
+    parameter == "F" ~ value / 18.998403,
+    parameter == "EC_uS" ~ value,
+    TRUE ~ NA_real_ )) %>%
+  mutate(meql = case_when(
+    parameter == "Na" ~ value / 22.989769,
+    parameter == "Ca" ~ value / 40.078 * 2,
+    parameter == "Mg" ~ value / 24.305 * 2,
+    parameter == "Fe" ~ value / 55.845 * 2,
+    parameter == "Mn" ~ value / 54.938044 * 2,
+    parameter == "K" ~ value / 39.0983,
+  ))
+  select(samplecode, parameter, meql) %>%
+  pivot_wider(names_from = parameter,
+              values_from = meql) %>%
+  filter(!is.na(Cl)) %>%
+  mutate(sum_an = rowSums(select(., Br, Cl, HCO3, NO2, NO3, PO4, SO4), na.rm = T),
+         sum_cat = rowSums(select(., Na, Ca, Mg, Fe, Mn, K))
+         EC_100 = EC_uS / 100) # this is only valid up to 1500 uS/cm !
+
+
+```
+
+
+
+
+# Field EC vs Calculated EC from lab results
+
+
+# Field EC vs Cl
+```{r}
+d <- data %>%
+  filter(parameter %in% c("Cl", "EC_uS")) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+ggplot(d, aes(x = Cl, y = EC_uS)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  scale_x_continuous(name = "Cl [mg/l]") +
+  scale_y_continuous(name = "EC [uS/cm]") +
+  theme_bw()
+
+```
+
+# SO4/Cl ratio
+Oxidation of sulphide minerals increases the sulphate concentrations in groundwater. 
+
+```{r}
+d <- data %>%
+  filter(parameter %in% c("Cl", "SO4")) %>%
+  select(samplecode, parameter, value, watertype) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  mutate(`SO4/Cl` = SO4 / Cl)
+
+ggplot(d, aes(x = Cl, y = SO4)) +
+  geom_point(colour = "black", pch = 21) +
+  geom_abline(slope = 0.14, linetype = "dashed", colour = "blue") +
+  geom_text(aes(x = 15000, y = 2500), label = "Seawater SO4/Cl ratio = 0.14", 
+            angle = 38, colour = "royalblue", size = 3.5) +
+  scale_x_continuous(name = "Cl [mg/l]") +
+  scale_y_continuous(name = "SO4 [mg/l]") +
+  #scale_fill_manual(values = c("blue", "yellow", "green", "purple", "orange", "grey")) +
+  theme_bw()
+
+ggplot(d, aes(x = Cl, y = `SO4/Cl`,size = watertype, shape = watertype, fill = watertype)) +
+  geom_point() +
+  geom_hline(yintercept = 0.14, linetype = "dashed", colour = "blue") +
+  geom_text(aes(x = 22500, y = 0.3), label = "Seawater SO4/Cl ratio = 0.14", 
+            colour = "royalblue", size = 4) +
+  scale_x_continuous(name = "Cl [mg/l]") +
+  scale_y_continuous(name = "SO4/Cl") +
+  scale_shape_manual(values = c(1, 24, 23, 21, 22, 8)) +
+  scale_size_manual(values = c(1, 3, 3, 3, 3, 4)) +
+  scale_fill_manual(values = c("black", "royalblue", "green", "yellow", "purple", "grey")) +
+  #scale_fill_manual(values = c("blue", "yellow", "green", "purple", "orange", "grey")) +
+  theme_bw()
+
+ggplot(d, aes(x = Cl, y = `SO4/Cl`,size = watertype, shape = watertype, fill = watertype)) +
+  geom_point() +
+  geom_hline(yintercept = 0.14, linetype = "dashed", colour = "blue") +
+  geom_text(aes(x = 4000, y = 0.3), label = "Seawater SO4/Cl ratio = 0.14", 
+            colour = "royalblue", size = 4) +
+  scale_x_continuous(name = "Cl [mg/l]") +
+  scale_y_continuous(name = "SO4/Cl") +
+  coord_cartesian(xlim = c(0, 5000)) +
+  scale_shape_manual(values = c(1, 24, 23, 21, 22, 8)) +
+  scale_size_manual(values = c(1, 3, 3, 3, 3, 4)) +
+  scale_fill_manual(values = c("black", "royalblue", "green", "yellow", "purple", "grey")) +
+  #scale_fill_manual(values = c("blue", "yellow", "green", "purple", "orange", "grey")) +
+  theme_bw()
+
+```
+
+# Cl/Br ratio
+
+```{r}
+d <- data %>%
+  filter(parameter %in% c("Br", "Cl"),
+         units == "mg/l") %>%
+  select(samplecode, parameter, value, watertype) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  mutate(`Cl/Br` = Cl / Br)
+
+ggplot(d, aes(x = Cl, y = Br)) +
+  geom_point(colour = "black", pch = 21) +
+  geom_abline(slope = 1/288, linetype = "dashed", colour = "blue") +
+  scale_x_continuous(name = "Cl [mg/l]") +
+  scale_y_continuous(name = "Br [mg/l]") +
+  #scale_fill_manual(values = c("blue", "yellow", "green", "purple", "orange", "grey")) +
+  theme_bw()
+
+ggplot(d, aes(x = Cl, y = `Cl/Br`)) +
+  geom_point(colour = "black", pch = 21) +
+  geom_hline(yintercept = 288, linetype = "dashed", colour = "blue") +
+  scale_x_continuous(name = "Cl [mg/l]") +
+  scale_y_continuous(name = "Cl/Br ratio") +
+  #scale_fill_manual(values = c("blue", "yellow", "green", "purple", "orange", "grey")) +
+  theme_bw()
+
+
+```
+
+# check dl of NH4 and PO4
+```{r}
+d <- data %>%
+  filter(method == "DA",
+         units %in% c("mg N/L ", "mg P/L ")) %>%
+  mutate(detection_limit = ifelse(parameter == "NH4", 0.2,
+                                  0.027)) %>%
+  mutate(below = ifelse(value < detection_limit, 1, 0)) 
+
+ggplot(d, aes(x = parameter, y = value)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_bw()
+
+ggplot(d %>% filter(parameter == "NH4"), 
+       aes(x = reorder(samplecode, -value), y = value)) +
+  geom_point() +
+  geom_hline(yintercept = 0.2, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = 0.04, linetype = "dashed", colour = "orange") +
+  scale_x_discrete(name = "arranged samples",
+                   labels = NULL) +
+  scale_y_continuous(name = "NH4 [mg N/l]") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_bw() 
+  
+d %>% 
+  group_by(parameter) %>%
+  summarise(n = n(),
+                perc_below = length(value[below == 1])/ n() * 100,
+                perc_above = length(value[below == 0]) / n() * 100)
+
+
+```
+
+# NH4 vs NO3
+```{r}
+d <- data %>%
+  filter(parameter %in% c("NO3", "NH4"),
+         units == "mg/l") %>%
+  select(samplecode, parameter, value, watertype) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) 
+
+ggplot(d, aes(x = NO3, y = NH4)) +
+  geom_point(colour = "black", pch = 21) +
+  scale_x_continuous(name = "NO3 [mg/l]") +
+  scale_y_continuous(name = "NH4 [mg/l]") +
+  #scale_fill_manual(values = c("blue", "yellow", "green", "purple", "orange", "grey")) +
+  theme_bw()
+
+```
+
+# Determine redox conditions based on O2, NO3, Fe, Mn and SO4
+# and check if these parameters make sense
+
+
+
+# boxplot metals per watertype
+
+```{r}
+d <- data %>%
+  filter(method == "ICP-MS")
+  
+ggplot(d %>% filter(units != "mg/l",
+                    #limit_symbol != "<",
+                    parameter %in% c("Al", "B", "Ba", "Cr", "Cu", "Fe", "Li", "Mn", "Se", "V", "Zn")),
+         #mutate(parameter = paste0(parameter, " [", units, "]")) %>% 
+       aes(x = parameter, y = value, fill = watertype)) +
+  geom_boxplot(outlier.shape = NA) +
+  # stat_boxplot(geom = 'errorbar', width = 0.4) +
+  # stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot", fill = "lightgrey", width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "concentration [ug/l]") +
+  #coord_cartesian(ylim = c(0, 500)) +
+  facet_wrap(facets = "parameter") +
+  theme_bw() 
+
+
+```
+
+
+
+
+# save data
+
+```{r}
+write.xlsx(data, paste0(output, "Clean_data/dataset_hydrochemistry_2021.xlsx"))
+```
+

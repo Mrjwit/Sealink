@@ -403,14 +403,28 @@ d <- ICP %>%
   mutate(value_dil = parse_number(value),
          value = parse_number(value) * Dilution) %>%
   # change units for Ca, Fe, K, Mg, Na, P, S, en Si
-  mutate(value = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+  mutate(value = ifelse(parameter %in% c("B", "Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
                         value / 1000, value),
-         units = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+         units = ifelse(parameter %in% c("B", "Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
                         "mg/l", units),
          detection_limit = ifelse(limit_symbol == "<", value, NA),
          method = "ICP-MS") %>%
+  # change negative values to zero
+  mutate(value = ifelse(value < 0, 0, value)) %>%
   # select only relevant columns
   select(samplecode, parameter, value, value_dil, limit_symbol, detection_limit, units, method)
+
+# Sample GW030 has been measured twice under GW030A and GW030B
+# the results need to be checked and returned under GW030
+# for now easy fix by taking GW030A as GW030
+d <- d %>%
+  mutate(samplecode = ifelse(samplecode == "GW030A", "GWO30", samplecode)) %>%
+  filter(samplecode != "GW030B")
+# d_30 <- d %>%
+#   filter(samplecode %in% c("GW030A", "GW030B")) %>%
+#   pivot_wider(names_from = samplecode,
+#               values_from = value)
+  
 
 
 ## Some quick checks, move elsewhere later!
@@ -503,8 +517,12 @@ d_ICP_wide <- d %>%
 d_ICP <- d %>% select(-value_dil) %>%
   mutate(notes = "")
 
+#### Isotopes ####
 
-# Combine all labresults 
+
+#### DOC ####
+
+#### Combine all labresults ####
 d <- rbind(d_IC, d_DA, d_ALK, d_ICP) %>%
   arrange(samplecode, parameter) 
 

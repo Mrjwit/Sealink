@@ -77,7 +77,7 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 
 oldnames <- names(IC)
 newnames <- c("ID", "F", "Cl", "NO2", "Br", "NO3", "PO4", "SO4", 
-              "dilution_factor", "ID2", "Fl_round", "Cl_round", "NO2_round", 
+              "dilution_factor", "ID2", "F_round", "Cl_round", "NO2_round", 
               "Br_round", "NO3_round", "PO4_round", "SO4_round")
 remove.list <- paste(c("Estim", "St", "Blanco", "QS STD anion"), collapse = '|')
 
@@ -92,7 +92,7 @@ d_IC <- IC %>%
   left_join(., lab_table %>% filter(analysis == "IC") %>% select(-analysis),
             by = c("ID" = "labcode")) %>%
   # place parameters in long format
-  pivot_longer(., cols = Fl:SO4_round,
+  pivot_longer(., cols = `F`:SO4_round,
                values_to = "value",
                names_to = "parameter") %>%
   # add column indicating if values are rounded or not
@@ -130,7 +130,7 @@ d_IC_dil <- IC_dil %>%
   left_join(., lab_table %>% filter(analysis == "IC_dilution") %>% select(-analysis),
             by = c("ID" = "labcode")) %>%
   # place parameters in long format
-  pivot_longer(., cols = c(Fl:SO4_round, -dilution_factor),
+  pivot_longer(., cols = c(`F`:SO4_round, -dilution_factor),
                values_to = "value",
                names_to = "parameter") %>%
   # add column indicating if values are rounded or not
@@ -245,7 +245,7 @@ d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units, Test),
   # add detection limits based on the test used  
   ### Still need to adjust these !!! using detectielimieten or rapportagegrenzen?? ###
   mutate(detection_limit = case_when(
-                            Test == "NH4 10" ~ 1.0, # should be 0.2 or 0.04?
+                            Test == "NH4 10" ~ 0.2, # should be 0.2 or 0.04?
                             Test == "o-PHOS 1" ~ 0.1, # should be .. or 0.013?
                             Test == "o-PHOS 5" ~ 0.5, # should be ... 
                             Test == "o-PHOS 20" ~ 1.0, # should be ...
@@ -403,9 +403,9 @@ d <- ICP %>%
   mutate(value_dil = parse_number(value),
          value = parse_number(value) * Dilution) %>%
   # change units for Ca, Fe, K, Mg, Na, P, S, en Si
-  mutate(value = ifelse(parameter %in% c("B", "Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+  mutate(value = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
                         value / 1000, value),
-         units = ifelse(parameter %in% c("B", "Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+         units = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
                         "mg/l", units),
          detection_limit = ifelse(limit_symbol == "<", value, NA),
          method = "ICP-MS") %>%
@@ -418,7 +418,7 @@ d <- ICP %>%
 # the results need to be checked and returned under GW030
 # for now easy fix by taking GW030A as GW030
 d <- d %>%
-  mutate(samplecode = ifelse(samplecode == "GW030A", "GWO30", samplecode)) %>%
+  mutate(samplecode = ifelse(samplecode == "GW030A", "GW030", samplecode)) %>%
   filter(samplecode != "GW030B")
 # d_30 <- d %>%
 #   filter(samplecode %in% c("GW030A", "GW030B")) %>%

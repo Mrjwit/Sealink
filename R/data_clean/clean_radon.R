@@ -43,7 +43,7 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 # Clean up the radon data
 d <- radon %>%
   # add parameter column with Radon
-  mutate(parameter = "Rd",
+  mutate(parameter = "Rn",
          units = "Bq/l",
          notes = ifelse(is.na(Notes),
                         paste("Sampling method:", Sampling.method),

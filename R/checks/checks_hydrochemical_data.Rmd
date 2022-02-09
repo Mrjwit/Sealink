@@ -279,7 +279,7 @@ ggplot(d, aes(x = sum_an, y = EC_100)) +
 
 For EC values up to 1500 uS/cm the relationship of sum anions = sum cation ~ EC/100 (uS/cm) will show good results. However,
 with increasing concentrations this relationship becomes non-linear and the conductivity decreases relative to the increasing concentrations. Reasons are ion-association and electrostatic shielding effects which increase with concentration (Appelo & Postma). 
-  (Stufyzand ...)
+EC = b * (Sum anion) ^ i   (Stufyzand ...)
 
 
 
@@ -493,9 +493,80 @@ ggplot(d, aes(x = NO3, y = NH4)) +
 
 ```
 
+# Radon
+```{r}
+d <- data %>%
+  filter(parameter == "Rn",
+         watertype == "groundwater")
+
+sample_size <- d %>%
+  group_by(parameter) %>% summarise(num = n())
+
+p1 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(parameter, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    #geom_violin(width = 1.4) +
+    #geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    theme_bw()
+
+p2 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(parameter, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    #geom_violin(width = 1.4) +
+    #geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    coord_cartesian(ylim = c(0, 10)) +
+    theme_bw()
+
+# ggplot(d, aes(x = value, fill = parameter)) +
+#   geom_histogram(binwidth = 1, color = "white", position = "identity") +
+#   theme_bw()
+
+plot_grid(p1, p2, labels = "AUTO")
+
+d <- data %>%
+  filter(parameter == "Rn")
+sample_size <- d %>%
+  group_by(watertype) %>% summarise(num = n())
+d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(watertype, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    #geom_violin(width = 1.4) +
+    #geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    #coord_cartesian(ylim = c(0, 10)) +
+    theme_bw()
+
+
+```
+
 # Determine redox conditions based on O2, NO3, Fe, Mn and SO4
 # and check if these parameters make sense
 
+
+# Determine watertypes based on Stuyfzand classification
+
+
+# Piper diagram
+
+
+# Stiff diagram
 
 
 # boxplot metals per watertype
@@ -518,9 +589,42 @@ ggplot(d %>% filter(units != "mg/l",
   facet_wrap(facets = "parameter") +
   theme_bw() 
 
+d <-  data %>%
+  filter(parameter %in% c("Al", "Li", "V", "Zn"),
+         limit_symbol != "<")
+sample_size <- d %>%
+  group_by(parameter) %>% summarise(num = n())
+
+d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(parameter, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value, fill = parameter)) +
+  geom_violin(width = 1.4) +
+  geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+  scale_y_continuous(name = "concentration [ug/l]") +
+  scale_fill_viridis(discrete = TRUE) +
+  #theme_ipsum() +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 11)
+  ) +
+  ggtitle("Violin wrapping a boxplot") +
+  xlab("")
+
+
 
 ```
 
+
+
+
+# Piper diagram
+```{r}
+
+
+
+```
 
 
 

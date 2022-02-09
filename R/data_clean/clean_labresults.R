@@ -187,11 +187,14 @@ d <- d_IC %>%
     limit_symbol == limit_symbol_dil ~ limit_symbol,
     limit_symbol == ">" & limit_symbol_dil != ">" ~ limit_symbol_dil,
     limit_symbol == "<" & limit_symbol_dil != "<" ~ limit_symbol_dil,
+    is.na(limit_symbol_dil) ~ limit_symbol,
     TRUE ~ "" )) 
 
 d_IC <- d %>%
-  mutate(detection_limit = ifelse(dt == "<" & detection_limit > waarde,
-                                  waarde, detection_limit),
+  # mutate(dt = ifelse(is.na(waarde), limit_symbol, dt)) %>%
+  mutate(detection_limit = ifelse(dt == "<" & is.na(detection_limit), value,
+                                  ifelse(dt == "<" & detection_limit > waarde, waarde, 
+                                  detection_limit)),
          waarde = ifelse(is.na(waarde), value, waarde),
          method = "IC",
          notes = "") %>%
@@ -487,9 +490,12 @@ ggplot(d %>% filter(units != "mg/l"),
   stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot", fill = "lightgrey", width = 0.6) +
   scale_x_discrete(name = "") +
   scale_y_continuous(name = "concentration [ug/l]") +
-  coord_cartesian(ylim = c(0, 300)) +
+  #coord_cartesian(ylim = c(0, 300)) +
   theme_bw() 
   #facet_wrap(facets = "parameter", scales = "free")
+
+
+
 
 # how many samples >dl and <cl per parameter
 check_limits <- d %>%

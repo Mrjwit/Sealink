@@ -30,11 +30,24 @@ pacman::p_load(tidyverse, openxlsx, ggmap,
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
 
 # isotopes data file
-deuterium <- read.xlsx(paste0(input, "Lab/Isotopes/W-6362--W-6381_2H_BriefSummary.xlsx"))
-oxygen18 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6362--W-6381_18O_BriefSummary.xlsx"))
+d1 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6362--W-6381_2H_BriefSummary.xlsx")) # samples 
+d2 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6392--W-6401_2H_BriefSummary.xlsx"))
+d3 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6427--W-6451_2H_BriefSummary.xlsx"))
+
+O1 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6362--W-6381_18O_BriefSummary.xlsx"))
+O2 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6392--W-6401_18O_BriefSummary.xlsx"))
+O3 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6427--W-6451_18O_BriefSummary.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
+
+###############################################################################
+# merge data
+###############################################################################
+
+deuterium <- rbind(d1, d2, d3)
+
+oxygen18 <- rbind(O1, O2, O3)
 
 ###############################################################################
 # edit data
@@ -87,29 +100,52 @@ ggplot(d18O, aes(x = waarde1, y = waarde2)) +
 d2H <- deuterium %>%
   rename(samplecode = Sample.ID,
          parameter = Isotope,
-         value = MeanDeltaOfAnalyses) %>%
-  mutate(limit_symbol = "",
+         value = MeanDeltaOfAnalyses,
+         Std = StdDevOfDeltaOfInjs) %>%
+  select(samplecode, parameter, value, Std) %>%
+  # get average of std of 2 sets of 5 injections per sample
+  group_by(samplecode) %>%
+  filter(!is.na(Std)) %>%
+  mutate(namen = paste0("Std", row_number())) %>%
+  ungroup() %>%
+  pivot_wider(names_from = namen,
+              values_from = Std) %>%
+  mutate(std = rowMeans(select(., 4:ncol(.)), na.rm=T) %>% round(digits = 2),
+         limit_symbol = "",
          detection_limit = NA,
          units = "‰",
          method = "IA",
          notes = ifelse(is.na(value), "Value is ignored after analysis", "")) %>%
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes) %>%
+  # select relevant columns and put in right format
+  select(samplecode, parameter, value, std, limit_symbol, detection_limit, units, method, notes) %>%
   unique()
 
 d18O <- oxygen18 %>%
   rename(samplecode = Sample.ID,
          parameter = Isotope,
-         value = MeanDeltaOfAnalyses) %>%
-  mutate(limit_symbol = "",
+         value = MeanDeltaOfAnalyses,
+         Std = StdDevOfDeltaOfInjs) %>%
+  select(samplecode, parameter, value, Std) %>%
+  # get average of std of 2 sets of 5 injections per sample
+  group_by(samplecode) %>%
+  filter(!is.na(Std)) %>%
+  mutate(namen = paste0("Std", row_number())) %>%
+  ungroup() %>%
+  pivot_wider(names_from = namen,
+              values_from = Std) %>%
+  mutate(std = rowMeans(select(., 4:ncol(.)), na.rm=T) %>% round(digits = 2),
+         limit_symbol = "",
          detection_limit = NA,
          units = "‰",
          method = "IA",
          notes = ifelse(is.na(value), "Value is ignored after analysis", "")) %>%
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes) %>%
+  # select relevant columns and put in right format
+  select(samplecode, parameter, value, std, limit_symbol, detection_limit, units, method, notes) %>%
   unique()
 
 # merge data together
-d <- rbind(d2H, d18O)
+d <- rbind(d2H, d18O) %>%
+  arrange(samplecode)
 
 ###############################################################################
 # save data

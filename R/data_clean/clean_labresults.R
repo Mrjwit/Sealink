@@ -32,7 +32,7 @@ pacman::p_load(tidyverse, openxlsx, ggmap, skimr,
 # set data file location
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
 
-# IC data files
+## IC data files
 IC <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iris_Verstappen.xlsx"),
                 sheet = "Report", startRow = 2, check.names = T) 
 # NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
@@ -40,15 +40,19 @@ IC <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iris_Ve
 # Diluted IC samples
 IC_dil <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iris_Verstappen_verdunning.xlsx"),
                     sheet = "Report", startRow = 2, check.names = T) 
+# IC extra samples and redilution
+IC2 <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Start_MW_JG.xlsx"),
+                 sheet = "Report2", startRow = 2, check.names = T) 
+
 # NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
 
-# ICP data file
+## ICP data file
 ICP <- read.xlsx(paste0(input, "Lab/ICP/20220124_Mike_Iris_all_elements.xlsx"),
                  sheet = "summary")
 ICP_dil_fac <- read.xlsx(paste0(input, "Lab/ICP/ICP preperations data.xlsx"),
                          sheet = "ICP-MS handed in", startRow = 17)
 
-# DA data file
+## DA data file
 DA <- read.xlsx(paste0(input, "Lab/DA/PO4 & NH4 Iris.xlsx"),
                 sheet = "Summary")
 DA_alk <- read.xlsx(paste0(input, "Lab/DA/Alkalinity Iris.xlsx"),
@@ -158,6 +162,36 @@ d_IC_dil <- IC_dil %>%
   # select only relevant columns
   select(samplecode, parameter, value, limit_symbol, detection_limit, units)
 
+# Add results from later sampling round
+d_IC2 <- IC2 %>%
+  # rename columns
+  rename(samplecode = ID,
+         `F` = Fluoride,
+         Cl = Chloride,
+         NO2 = Nitrite,
+         Br = Bromide,
+         NO3 = Nitrate,
+         PO4 = Phosphate,
+         SO4 = Sulphate,
+         dilution_factor = factor) %>%
+  # remove rows with calibration standards and blank samples
+  filter(!str_detect(samplecode, remove.list)) %>%
+  # place parameters in long format
+  pivot_longer(., cols = c(`F`:SO4, -dilution_factor),
+               values_to = "value",
+               names_to = "parameter") %>%
+  # add limit symbol, detection limit values and units
+  mutate(limit_symbol = ifelse(str_detect(value, "<"),
+                               "<", ""),
+         detection_limit = ifelse(str_detect(value, "<"),
+                                  as.numeric(gsub("<", "", value)), NA),
+         units = "mg/l") %>%
+  mutate(value = as.numeric(gsub("<", "", value)) %>% round(., digits = 3),
+         method = "IC",
+         notes = "") %>%
+  # select only relevant columns
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes)
+
 ## Check for differences between diluted samples and regular samples
 d <- d_IC %>%
   left_join(., d_IC_dil %>% 
@@ -192,28 +226,33 @@ d <- d_IC %>%
 
 d_IC <- d %>%
   # mutate(dt = ifelse(is.na(waarde), limit_symbol, dt)) %>%
-  mutate(detection_limit = ifelse(dt == "<" & is.na(detection_limit), value,
-                                  ifelse(dt == "<" & detection_limit > waarde, waarde, 
-                                  detection_limit)),
-         waarde = ifelse(is.na(waarde), value, waarde),
+  mutate(detection_limit = case_when(
+    dt == "<" & is.na(detection_limit) ~ value,
+    dt == "<" & detection_limit > waarde ~ waarde,
+    TRUE ~ detection_limit )) %>%
+  mutate(waarde = ifelse(is.na(waarde), value, waarde),
          method = "IC",
          notes = "") %>%
   select(samplecode, parameter, waarde, dt, detection_limit, units, method, notes) %>%
   rename(limit_symbol = dt,
-         value = waarde)
+         value = waarde) %>%
+  # remove SEA001 as this one has remeasured in d_IC2
+  filter(samplecode != "SEA001")
+d_IC <- rbind(d_IC, d_IC2) %>%
+  arrange(samplecode)
 
 ## make wide format  -> make wide format for all lab results
-# d_IC_wide <- d_IC %>%
-#   mutate(parameter = paste(parameter, units)) %>%
-#   select(-c(detection_limit, units)) %>%
-#   pivot_wider(.,
-#               names_from = parameter,
-#               values_from = c(value, limit_symbol),
-#               names_glue = "{parameter}_{.value})") %>%
-#   select(1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15, 8)
-
+d_IC_wide <- d_IC %>%
+ mutate(parameter = paste(parameter, units)) %>%
+ select(-c(detection_limit, units, method, notes)) %>%
+ pivot_wider(.,
+             names_from = parameter,
+             values_from = c(value, limit_symbol),
+             names_glue = "{parameter}_{.value})") %>%
+ select(1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15, 8)
+# 
 # if(nrow(check) > 0) {
-#   stop("More than 1 value for .. in a sample")
+#  stop("More than 1 value for .. in a sample")
 # }
 
 
@@ -381,17 +420,20 @@ d <- ICP %>%
             by = c("labcode" = "Sample.ID")) %>%
   # convert all elements to characters so they can be placed in one column
   mutate_at(c(2:31), as.character) %>%
-  # add Fe56 and Fe57 isotopes together
-  mutate(Fe56_dt = ifelse(str_detect(Fe56, "b"), "<", ""),
-         Fe56_v = parse_number(Fe56),
-         Fe57_dt = ifelse(str_detect(Fe57, "b"), "<", ""),
-         Fe57_v = parse_number(Fe57)) %>%
-  mutate(Fe = case_when(
-    Fe56_dt != "<" & Fe57_dt != "<" ~ as.numeric(Fe56_v) + as.numeric(Fe57_v),
-    Fe56_dt != "<" & Fe57_dt == "<" ~ as.numeric(Fe56_v),
-    Fe56_dt == "<" & Fe57_dt != "<" ~ as.numeric(Fe57_v),
-    Fe56_dt == "<" & Fe57_dt == "<" ~ min(as.numeric(Fe56_v), as.numeric(Fe57_v)),
-    TRUE ~ NA_real_ ) %>% as.character()) %>%
+  # Select either Fe57 or Fe56 depending on the concentration range!!
+  ##
+  ##
+  ##
+  # mutate(Fe56_dt = ifelse(str_detect(Fe56, "b"), "<", ""),
+  #        Fe56_v = parse_number(Fe56),
+  #        Fe57_dt = ifelse(str_detect(Fe57, "b"), "<", ""),
+  #        Fe57_v = parse_number(Fe57)) %>%
+  # mutate(Fe = case_when(
+  #   Fe56_dt != "<" & Fe57_dt != "<" ~ as.numeric(Fe56_v) + as.numeric(Fe57_v),
+  #   Fe56_dt != "<" & Fe57_dt == "<" ~ as.numeric(Fe56_v),
+  #   Fe56_dt == "<" & Fe57_dt != "<" ~ as.numeric(Fe57_v),
+  #   Fe56_dt == "<" & Fe57_dt == "<" ~ min(as.numeric(Fe56_v), as.numeric(Fe57_v)),
+  #   TRUE ~ NA_real_ ) %>% as.character()) %>%
   # remove help columns
   select(-c(Fe56_dt, Fe56_v, Fe57_dt, Fe57_v)) %>%
   # place parameters in long format
@@ -546,5 +588,6 @@ d_wide <- d %>%
 
 write.xlsx(d, paste0(output, "Clean_data/lab_data_long.xlsx"))
 write.xlsx(d_wide, paste0(output, "Clean_data/lab_data_wide.xlsx"))
+write.xlsx(d_IC_wide, paste0(output, "Clean_data/lab_IC_wide.xlsx"))
 write.xlsx(d_ICP_wide, paste0(output, "Clean_data/lab_ICP_wide.xlsx"))
 

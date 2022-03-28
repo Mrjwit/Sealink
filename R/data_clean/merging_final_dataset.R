@@ -186,13 +186,16 @@ d <- data1977_1992 %>%
   select(samplecode, year, parameter, value, limit_symbol, detection_limit,
          units, method, notes, watercode, watertype, subtype)
 
-data <- rbind(data %>% mutate(year = 2021), d)
+data <- rbind(data %>% mutate(year = 2021), d) %>%
+  select(samplecode, year, parameter, value, limit_symbol, detection_limit,
+         units, method, notes, watercode, watertype, subtype)
 
 ###############################################################################
-# exporting final database
+# save final database
 ###############################################################################
 
 # hydrochemistry
+write.xlsx(data, paste0(output, "Clean_data/hydrochemistry_curacao.xlsx"))
 
 # metadata file
 

@@ -47,6 +47,8 @@ IC2 <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Start_
 # NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
 
 ## ICP data file
+ICP_total <- read.xlsx(paste0(input, "Lab/ICP/ICP-results_GW001_WW003.xlsx"),
+                       sheet = "FINAL")
 ICP <- read.xlsx(paste0(input, "Lab/ICP/20220124_Mike_Iris_all_elements.xlsx"),
                  sheet = "summary")
 ICP_dil_fac <- read.xlsx(paste0(input, "Lab/ICP/ICP preperations data.xlsx"),
@@ -396,17 +398,55 @@ d_ALK <- DA_alk %>%
 
 #### ICP edits and checks ####
 
-oldnames <- names(ICP)
-newnames <- c("labcode", "Li", "Be", "B", "Na", "Mg", "Mg26", "Al",
+# oldnames <- names(ICP)
+# newnames <- c("labcode", "Li", "Be", "B", "Na", "Mg", "Mg26", "Al",
+#               "Si", "P", "S", "K", "Ca", "Ti", "V", "Cr", "Mn",
+#               "Fe56", "Fe57", "Cu", "Zn", "Co", "Ni", "As", "Se",
+#               "Mo", "Ag", "Cd", "Sb", "Ba", "Pb")
+# remove.list <- paste(c("SRM", "ERM", "mg/"), collapse = '|')
+oldnames <- names(ICP_total)
+newnames <- c("labcode", "samplecode", "Li", "Be", "B", "Na", "Mg", "Al",
               "Si", "P", "S", "K", "Ca", "Ti", "V", "Cr", "Mn",
-              "Fe56", "Fe57", "Cu", "Zn", "Co", "Ni", "As", "Se",
+              "Fe", "Cu", "Zn", "Co", "Ni", "As", "Se",
               "Mo", "Ag", "Cd", "Sb", "Ba", "Pb")
-remove.list <- paste(c("SRM", "ERM", "mg/"), collapse = '|')
+remove.list <- paste(c("SRM", "ERM", "mg/", "Analysis"), collapse = '|')
 
 # values with #Name indicates that the detector is overloaded
 # values with x indicates that the value is above the calibration line
 # values with b indicates that the value is below the detection limit ??
 
+# for final combined ICP dataset
+d <- ICP_total %>%
+  # rename column names
+  rename_with(~ newnames[which(oldnames == .x)], .cols = oldnames) %>%
+  #remove rows that are no samples
+  filter(!str_detect(labcode, remove.list)) %>%
+  # convert all elements to characters so they can be placed in one column
+  mutate_at(c(3:30), as.character) %>%
+  #place paramters in long format
+  pivot_longer(., cols = c(Li:Pb),
+               values_to = "value",
+               names_to = "parameter") %>%
+  # add limit symbol, detection limit values and units
+  mutate(limit_symbol = ifelse(str_detect(value, "b"), "<", 
+                               ifelse(str_detect(value, "x"), ">", "")),
+         units = "ug/l") %>%
+  # change values to numeric 
+  mutate(value = parse_number(value)) %>%
+  # change units for Ca, Fe, K, Mg, Na, P, S, en Si
+  mutate(value = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Na", "P", "S", "Si"),
+                        value / 1000, value),
+         units = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+                        "mg/l", units),
+         limit_symbol = ifelse(is.na(value), "", limit_symbol),
+         detection_limit = ifelse(limit_symbol == "<", value, NA),
+         method = "ICP-MS") %>%
+  # change negative values to zero
+  mutate(value = ifelse(value < 0, 0, value)) %>%
+  # select only relevant columns
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
+
+# for first ICP dataset
 d <- ICP %>%
   # rename column names
   rename_with(~ newnames[which(oldnames == .x)], .cols = oldnames) %>%
@@ -470,7 +510,6 @@ d <- d %>%
 #   pivot_wider(names_from = samplecode,
 #               values_from = value)
   
-
 
 ## Some quick checks, move elsewhere later!
 # Dilution factors in histogram
@@ -555,6 +594,10 @@ d %>%
 
 # make wide format ICP
 d_ICP_wide <- d %>%
+  # adjust digits of values
+  mutate(value = round(value, digits = 3)) %>%
+  # select main cation
+  filter(parameter %in% c("Na", "Ca", "Mg", "B", "K", "Fe", "Si")) %>%
   # adjust values < and > dl
   mutate(parameter = paste(parameter, units),
          value = paste(limit_symbol, value)) %>%

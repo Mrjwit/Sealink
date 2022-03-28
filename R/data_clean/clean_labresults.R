@@ -446,58 +446,58 @@ d <- ICP_total %>%
   # select only relevant columns
   select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
 
-# for first ICP dataset
-d <- ICP %>%
-  # rename column names
-  rename_with(~ newnames[which(oldnames == .x)], .cols = oldnames) %>%
-  # remove rows with calibration standards and blank samples
-  filter(!str_detect(labcode, remove.list)) %>%
-  # add samplecode to lab numbers 
-  left_join(., lab_table %>% filter(analysis == "ICP") %>% select(-analysis),
-            by = c("labcode" = "labcode")) %>%
-  # add dilution factor 
-  left_join(., ICP_dil_fac %>% select(Sample.ID, Dilution),
-            by = c("labcode" = "Sample.ID")) %>%
-  # convert all elements to characters so they can be placed in one column
-  mutate_at(c(2:31), as.character) %>%
-  # Select either Fe57 or Fe56 depending on the concentration range!!
-  ##
-  ##
-  ##
-  # mutate(Fe56_dt = ifelse(str_detect(Fe56, "b"), "<", ""),
-  #        Fe56_v = parse_number(Fe56),
-  #        Fe57_dt = ifelse(str_detect(Fe57, "b"), "<", ""),
-  #        Fe57_v = parse_number(Fe57)) %>%
-  # mutate(Fe = case_when(
-  #   Fe56_dt != "<" & Fe57_dt != "<" ~ as.numeric(Fe56_v) + as.numeric(Fe57_v),
-  #   Fe56_dt != "<" & Fe57_dt == "<" ~ as.numeric(Fe56_v),
-  #   Fe56_dt == "<" & Fe57_dt != "<" ~ as.numeric(Fe57_v),
-  #   Fe56_dt == "<" & Fe57_dt == "<" ~ min(as.numeric(Fe56_v), as.numeric(Fe57_v)),
-  #   TRUE ~ NA_real_ ) %>% as.character()) %>%
-  # remove help columns
-  select(-c(Fe56_dt, Fe56_v, Fe57_dt, Fe57_v)) %>%
-  # place parameters in long format
-  pivot_longer(., cols = c(Li:Fe, -samplecode, -Dilution),
-               values_to = "value",
-               names_to = "parameter") %>%
-  # add limit symbol, detection limit values and units
-  mutate(limit_symbol = ifelse(str_detect(value, "b"), "<", 
-                               ifelse(str_detect(value, "x"), ">", "")),
-         units = "ug/l") %>%
-  # change values to numeric and correct for dilution
-  mutate(value_dil = parse_number(value),
-         value = parse_number(value) * Dilution) %>%
-  # change units for Ca, Fe, K, Mg, Na, P, S, en Si
-  mutate(value = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
-                        value / 1000, value),
-         units = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
-                        "mg/l", units),
-         detection_limit = ifelse(limit_symbol == "<", value, NA),
-         method = "ICP-MS") %>%
-  # change negative values to zero
-  mutate(value = ifelse(value < 0, 0, value)) %>%
-  # select only relevant columns
-  select(samplecode, parameter, value, value_dil, limit_symbol, detection_limit, units, method)
+# # for first ICP dataset
+# d <- ICP %>%
+#   # rename column names
+#   rename_with(~ newnames[which(oldnames == .x)], .cols = oldnames) %>%
+#   # remove rows with calibration standards and blank samples
+#   filter(!str_detect(labcode, remove.list)) %>%
+#   # add samplecode to lab numbers 
+#   left_join(., lab_table %>% filter(analysis == "ICP") %>% select(-analysis),
+#             by = c("labcode" = "labcode")) %>%
+#   # add dilution factor 
+#   left_join(., ICP_dil_fac %>% select(Sample.ID, Dilution),
+#             by = c("labcode" = "Sample.ID")) %>%
+#   # convert all elements to characters so they can be placed in one column
+#   mutate_at(c(2:31), as.character) %>%
+#   # Select either Fe57 or Fe56 depending on the concentration range!!
+#   ##
+#   ##
+#   ##
+#   # mutate(Fe56_dt = ifelse(str_detect(Fe56, "b"), "<", ""),
+#   #        Fe56_v = parse_number(Fe56),
+#   #        Fe57_dt = ifelse(str_detect(Fe57, "b"), "<", ""),
+#   #        Fe57_v = parse_number(Fe57)) %>%
+#   # mutate(Fe = case_when(
+#   #   Fe56_dt != "<" & Fe57_dt != "<" ~ as.numeric(Fe56_v) + as.numeric(Fe57_v),
+#   #   Fe56_dt != "<" & Fe57_dt == "<" ~ as.numeric(Fe56_v),
+#   #   Fe56_dt == "<" & Fe57_dt != "<" ~ as.numeric(Fe57_v),
+#   #   Fe56_dt == "<" & Fe57_dt == "<" ~ min(as.numeric(Fe56_v), as.numeric(Fe57_v)),
+#   #   TRUE ~ NA_real_ ) %>% as.character()) %>%
+#   # remove help columns
+#   select(-c(Fe56_dt, Fe56_v, Fe57_dt, Fe57_v)) %>%
+#   # place parameters in long format
+#   pivot_longer(., cols = c(Li:Fe, -samplecode, -Dilution),
+#                values_to = "value",
+#                names_to = "parameter") %>%
+#   # add limit symbol, detection limit values and units
+#   mutate(limit_symbol = ifelse(str_detect(value, "b"), "<", 
+#                                ifelse(str_detect(value, "x"), ">", "")),
+#          units = "ug/l") %>%
+#   # change values to numeric and correct for dilution
+#   mutate(value_dil = parse_number(value),
+#          value = parse_number(value) * Dilution) %>%
+#   # change units for Ca, Fe, K, Mg, Na, P, S, en Si
+#   mutate(value = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+#                         value / 1000, value),
+#          units = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+#                         "mg/l", units),
+#          detection_limit = ifelse(limit_symbol == "<", value, NA),
+#          method = "ICP-MS") %>%
+#   # change negative values to zero
+#   mutate(value = ifelse(value < 0, 0, value)) %>%
+#   # select only relevant columns
+#   select(samplecode, parameter, value, value_dil, limit_symbol, detection_limit, units, method)
 
 # Sample GW030 has been measured twice under GW030A and GW030B
 # the results need to be checked and returned under GW030
@@ -528,69 +528,69 @@ d <- d %>%
 #   unique() %>%
 #   summary()
 
-# boxplot per parameter to see from which parameters to change units.
-calc_boxplot_stat <- function(x) {
-  coef <- 1.5
-  n <- sum(!is.na(x))
-  # calculate quantiles
-  stats <- quantile(x, probs = c(0.0, 0.25, 0.5, 0.75, 1.0))
-  names(stats) <- c("ymin", "lower", "middle", "upper", "ymax")
-  iqr <- diff(stats[c(2, 4)])
-  # set whiskers
-  outliers <- x < (stats[2] - coef * iqr) | x > (stats[4] + coef * iqr)
-  if (any(outliers)) {
-    stats[c(1, 5)] <- range(c(stats[2:4], x[!outliers]), na.rm = TRUE)
-  }
-  return(stats)
-}
-
-ggplot(d %>% mutate(parameter = paste0(parameter, " [", units, "]")), 
-       aes(x = parameter, y = value, groep = parameter)) +
-  #geom_boxplot(outlier.shape = NA) +
-  stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot") +
-  scale_x_discrete(name = "") +
-  scale_y_continuous(name = "") +
-  theme_bw() +
-  facet_wrap(facets = "parameter", scales = "free")
-# boxplots with only values >dl
-ggplot(d %>% mutate(parameter = paste0(parameter, " [", units, "]")) %>%
-         filter(limit_symbol != "<"), 
-       aes(x = parameter, y = value, groep = parameter)) +
-  #geom_boxplot(outlier.shape = NA) +
-  stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot") +
-  scale_x_discrete(name = "") +
-  scale_y_continuous(name = "") +
-  theme_bw() +
-  facet_wrap(facets = "parameter", scales = "free")
-
-ggplot(d %>% filter(units != "mg/l"),
-         #mutate(parameter = paste0(parameter, " [", units, "]")) %>% 
-       aes(x = parameter, y = value, groep = parameter)) +
-  #geom_boxplot(outlier.shape = NA) +
-  stat_boxplot(geom = 'errorbar', width = 0.4) +
-  stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot", fill = "lightgrey", width = 0.6) +
-  scale_x_discrete(name = "") +
-  scale_y_continuous(name = "concentration [ug/l]") +
-  #coord_cartesian(ylim = c(0, 300)) +
-  theme_bw() 
-  #facet_wrap(facets = "parameter", scales = "free")
-
-
+# # boxplot per parameter to see from which parameters to change units.
+# calc_boxplot_stat <- function(x) {
+#   coef <- 1.5
+#   n <- sum(!is.na(x))
+#   # calculate quantiles
+#   stats <- quantile(x, probs = c(0.0, 0.25, 0.5, 0.75, 1.0))
+#   names(stats) <- c("ymin", "lower", "middle", "upper", "ymax")
+#   iqr <- diff(stats[c(2, 4)])
+#   # set whiskers
+#   outliers <- x < (stats[2] - coef * iqr) | x > (stats[4] + coef * iqr)
+#   if (any(outliers)) {
+#     stats[c(1, 5)] <- range(c(stats[2:4], x[!outliers]), na.rm = TRUE)
+#   }
+#   return(stats)
+# }
+# 
+# ggplot(d %>% mutate(parameter = paste0(parameter, " [", units, "]")), 
+#        aes(x = parameter, y = value, groep = parameter)) +
+#   #geom_boxplot(outlier.shape = NA) +
+#   stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot") +
+#   scale_x_discrete(name = "") +
+#   scale_y_continuous(name = "") +
+#   theme_bw() +
+#   facet_wrap(facets = "parameter", scales = "free")
+# # boxplots with only values >dl
+# ggplot(d %>% mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+#          filter(limit_symbol != "<"), 
+#        aes(x = parameter, y = value, groep = parameter)) +
+#   #geom_boxplot(outlier.shape = NA) +
+#   stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot") +
+#   scale_x_discrete(name = "") +
+#   scale_y_continuous(name = "") +
+#   theme_bw() +
+#   facet_wrap(facets = "parameter", scales = "free")
+# 
+# ggplot(d %>% filter(units != "mg/l"),
+#          #mutate(parameter = paste0(parameter, " [", units, "]")) %>% 
+#        aes(x = parameter, y = value, groep = parameter)) +
+#   #geom_boxplot(outlier.shape = NA) +
+#   stat_boxplot(geom = 'errorbar', width = 0.4) +
+#   stat_summary(fun.data = calc_boxplot_stat, geom = "boxplot", fill = "lightgrey", width = 0.6) +
+#   scale_x_discrete(name = "") +
+#   scale_y_continuous(name = "concentration [ug/l]") +
+#   #coord_cartesian(ylim = c(0, 300)) +
+#   theme_bw() 
+#   #facet_wrap(facets = "parameter", scales = "free")
 
 
-# how many samples >dl and <cl per parameter
-check_limits <- d %>%
-  group_by(parameter) %>%
-  summarise(samples = n(),
-            "< cal. line [%]" = round(length(value[limit_symbol == "<"]) / n() * 100, digits = 1),
-            "> cal. line [%]" = round(length(value[limit_symbol == ">"]) / n() * 100, digits = 1),
-            "value ok [%]" = round(length(value[limit_symbol == ""]) / n() * 100, digits = 1)) %>%
-  view()
 
-d %>% 
-  group_by(parameter) %>%
-  summarise(n.dl = n_distinct(value[limit_symbol == "<"])) %>%
-  view()
+
+# # how many samples >dl and <cl per parameter
+# check_limits <- d %>%
+#   group_by(parameter) %>%
+#   summarise(samples = n(),
+#             "< cal. line [%]" = round(length(value[limit_symbol == "<"]) / n() * 100, digits = 1),
+#             "> cal. line [%]" = round(length(value[limit_symbol == ">"]) / n() * 100, digits = 1),
+#             "value ok [%]" = round(length(value[limit_symbol == ""]) / n() * 100, digits = 1)) %>%
+#   view()
+# 
+# d %>% 
+#   group_by(parameter) %>%
+#   summarise(n.dl = n_distinct(value[limit_symbol == "<"])) %>%
+#   view()
 
 # make wide format ICP
 d_ICP_wide <- d %>%
@@ -605,7 +605,9 @@ d_ICP_wide <- d %>%
   pivot_wider(names_from = parameter,
               values_from = value) 
     
-d_ICP <- d %>% select(-value_dil) %>%
+# d_ICP <- d %>% select(-value_dil) %>%
+#   mutate(notes = "")
+d_ICP <- d %>%
   mutate(notes = "")
 
 #### Isotopes ####

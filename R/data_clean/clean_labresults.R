@@ -57,6 +57,8 @@ ICP_dil_fac <- read.xlsx(paste0(input, "Lab/ICP/ICP preperations data.xlsx"),
 ## DA data file
 DA <- read.xlsx(paste0(input, "Lab/DA/PO4 & NH4 Iris.xlsx"),
                 sheet = "Summary")
+DA2 <- read.xlsx(paste0(input, "Lab/DA/Mike  18-3-22 PO4_MW.xlsx"),
+                 sheet = "summary")
 DA_alk <- read.xlsx(paste0(input, "Lab/DA/Alkalinity Iris.xlsx"),
                     sheet = "Summary")
 DA_alk_dil <- read.xlsx(paste0(input, "Lab/DA/Data alkalinity check DA.xlsx"),
@@ -277,67 +279,84 @@ d_DA <- DA %>%
   # Adjust units: Convert mg/l P to mg/l PO4 and mg/l N to mg/l NH4
   mutate(Results.2 = ifelse(str_detect(Units, "P"),
                             Results / (30.973762 / 94.9714),
-                            Results / (14.0067 / 18.039))) 
+                            Results / (14.0067 / 18.039))) %>%
+  # add detection limits based on the test used
+  mutate(detection_limit = case_when(
+                            Test == "NH4 1" ~ 0.041, # based on duplicate test with 0.2 mg N/l standard, should be done with 0.1 mg N/l!
+                            Test == "NH4 10" ~ 0.2, # should be 0.2 or 0.04?
+                            Test == "o-PHOS 1" ~ 0.027, # based on duplicate test with 0.1 mg P/l standard
+                            Test == "o-PHOS 5" ~ 0.5, # this is based on lower range, should be based on duplicate test 
+                            Test == "o-PHOS 10" ~ 1.2, # this is based on lower range, should be based on duplicate test 
+                            Test == "o-PHOS 20" ~ 2.0, # this is based on lower range, should be based on duplicate test 
+                            TRUE ~ NA_real_ )) %>%
+  # change detection limit for mg/l units
+  mutate(detection_limit.2 = case_when(
+                            parameter == "NH4" ~ detection_limit / (14.0067 / 18.039) %>% round(digits = 4),
+                            parameter == "PO4" ~ detection_limit / (30.973762 / 94.9714) %>% round(digits = 4),
+                            TRUE ~ NA_real_ )) 
+
+# second DA round
+d2 <- DA2 %>%
+  mutate(parameter = ifelse(str_detect(Units, "P"),
+                            "PO4", "NH4"),
+         Units.2 = "mg/l") %>%
+  # Adjust units: Convert mg/l P to mg/l PO4 and mg/l N to mg/l NH4
+  mutate(Results.2 = ifelse(str_detect(Units, "P"),
+                            Results / (30.973762 / 94.9714),
+                            Results / (14.0067 / 18.039))) %>%
+  # add detection limits based on the test used
+  mutate(detection_limit = case_when(
+    Test == "NH4 1" ~ 0.041, # based on duplicate test with 0.2 mg N/l standard, should be done with 0.1 mg N/l!
+    Test == "NH4 10" ~ 0.2, # should be 0.2 or 0.04?
+    Test == "o-PHOS 1" ~ 0.027, # based on duplicate test with 0.1 mg P/l standard
+    Test == "o-PHOS 5" ~ 0.5, # this is based on lower range, should be based on duplicate test 
+    Test == "o-PHOS 10" ~ 1.2, # this is based on lower range, should be based on duplicate test 
+    Test == "o-PHOS 20" ~ 2.0, # this is based on lower range, should be based on duplicate test 
+    TRUE ~ NA_real_ )) %>%
+  # change detection limit for mg/l units
+  mutate(detection_limit.2 = case_when(
+    parameter == "NH4" ~ detection_limit / (14.0067 / 18.039) %>% round(digits = 4),
+    parameter == "PO4" ~ detection_limit / (30.973762 / 94.9714) %>% round(digits = 4),
+    TRUE ~ NA_real_ )) 
 
 # place different units and corresponding values in long format
-d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units, Test),
-           d_DA %>% select(samplecode, parameter, Results.2, Units.2, Test) %>% 
-             rename(Results = Results.2, Units = Units.2)) %>%
+d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units, detection_limit, Test),
+           d_DA %>% select(samplecode, parameter, Results.2, Units.2, detection_limit.2, Test) %>% 
+                      rename(Results = Results.2, Units = Units.2, detection_limit = detection_limit.2),
+           d2 %>% select(samplecode, parameter, Results, Units, detection_limit, Test),
+           d2 %>% select(samplecode, parameter, Results.2, Units.2, detection_limit.2, Test) %>%
+                      rename(Results = Results.2, Units = Units.2, detection_limit = detection_limit.2)) %>%
   rename(value = Results,
          units = Units) %>%
   arrange(samplecode, parameter) %>%
-  # add detection limits based on the test used  
-  ### Still need to adjust these !!! using detectielimieten or rapportagegrenzen?? ###
-  mutate(detection_limit = case_when(
-                            Test == "NH4 10" ~ 0.2, # should be 0.2 or 0.04?
-                            Test == "o-PHOS 1" ~ 0.1, # should be .. or 0.013?
-                            Test == "o-PHOS 5" ~ 0.5, # should be ... 
-                            Test == "o-PHOS 20" ~ 1.0, # should be ...
-                            TRUE ~ NA_real_ )) %>%
-    # assume negative values to be <dl and add detection limits based on DA analysis method manual
-  # where dl NH4 = 0.04 and dl PO4 = 0.013 -> CHECK!! 
+  # assume negative values to be <dl and add detection limits based on DA analysis method manual
+  # where dl NH4 = 0.04 and dl PO4 = 0.027 -> CHECK!! 
   mutate(limit_symbol = ifelse(value < detection_limit,
                                "<", ""),
-         # change detection limit for mg/l units
-         detection_limit = case_when(
-                             parameter == "NH4" & units == "mg N/L " ~ detection_limit,
-                             parameter == "NH4" & units == "mg/l" ~ detection_limit / (14.0067 / 18.039),
-                             parameter == "PO4" & units == "mg P/L " ~ detection_limit,
-                             parameter == "PO4" & units == "mg/l" ~ detection_limit / (30.973762 / 94.9714),
-                             TRUE ~ NA_real_) %>% round(digits = 4),
-         # set negative values to 0, 
-        ## still change values < dl to the dl ???
-         value = ifelse(value < 0, 0, value),
-         method = "DA",
+         # change negative values and values <dl to the dl
+         value = ifelse(value < detection_limit, detection_limit, value),
+         method = paste("DA", Test),
          notes = "") 
 
-###
-### Change negative values and values < dl ???
-### 
-
-d %>%
-  mutate(check = ifelse(value < detection_limit, 1, 0)) %>%
-  filter(check == 1) 
-
 ## compare PO4 from IC and DA
-check <- d %>% 
-  filter(parameter == "PO4", units == "mg/l") %>%
-  rename(value_DA = value) %>%
-  select(samplecode, parameter, value_DA, units) %>%
-  left_join(., d_IC %>% 
-                  filter(parameter == "PO4") %>%
-              rename(value_IC = value) %>%
-              select(samplecode, parameter, value_IC))
-
-ggplot(check, aes(x = value_DA, y = value_IC)) +
-  geom_point() +
-  geom_abline(intercept = 0, linetype = "dashed") +
-  geom_smooth(method = "lm") +
-  scale_x_continuous(limits = c(-0.2, 30),
-                     name = "PO4 DA [mg/l]") +
-  scale_y_continuous(limits = c(-0.2, 30),
-                     name = "PO4 IC [mg/]") +
-  theme_bw()
+# check <- d %>% 
+#   filter(parameter == "PO4", units == "mg/l") %>%
+#   rename(value_DA = value) %>%
+#   select(samplecode, parameter, value_DA, units) %>%
+#   left_join(., d_IC %>% 
+#                   filter(parameter == "PO4") %>%
+#               rename(value_IC = value) %>%
+#               select(samplecode, parameter, value_IC))
+# 
+# ggplot(check, aes(x = value_DA, y = value_IC)) +
+#   geom_point() +
+#   geom_abline(intercept = 0, linetype = "dashed") +
+#   geom_smooth(method = "lm") +
+#   scale_x_continuous(limits = c(-0.2, 30),
+#                      name = "PO4 DA [mg/l]") +
+#   scale_y_continuous(limits = c(-0.2, 30),
+#                      name = "PO4 IC [mg/]") +
+#   theme_bw()
 
 
 # # checks
@@ -609,6 +628,12 @@ d_ICP_wide <- d %>%
 #   mutate(notes = "")
 d_ICP <- d %>%
   mutate(notes = "")
+
+# d <- d %>%
+#   filter(parameter %in% c("Na", "Ca", "Mg", "B", "K", "Fe", "Si")) %>%
+#   select(samplecode, parameter, limit_symbol, value, units, method) %>%
+#   arrange(samplecode, parameter)
+# write.xlsx(d, paste0(output, "Clean_data/lab_ICP_long.xlsx"))
 
 #### Isotopes ####
 

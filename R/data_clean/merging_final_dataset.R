@@ -95,7 +95,7 @@ d_meta <- metadata %>%
 
 # adjust some HCO3 values where they were not consistent with ionic balance
 # based on the plots and ionic balance, some changes for HCO3:
-# GW002 -> use HCO3 lab instead of HCO3 field
+# GW002 -> use HCO3 lab instead of HCO3 field ???? Maybe field titration is better and difference is caused by Na/Cl
 # GW028 -> use different HCO3 titration -> adjusted in alkalinity sheet
 # GW033 -> use HCO3 lab 
 # RW001 -> use HCO3 lab

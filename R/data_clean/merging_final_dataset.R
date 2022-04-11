@@ -31,19 +31,19 @@ pacman::p_load(tidyverse, openxlsx, ggmap,
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
 
 # load cleaned data of 2021-2022 fieldwork
-alk <- read.xlsx(paste0(input, "alkalinity_clean.xlsx"))
-ecoli <- read.xlsx(paste0(input, "ecoli_clean.xlsx"))
-radon <- read.xlsx(paste0(input, "radon_clean.xlsx"))
-labdata <- read.xlsx(paste0(input, "lab_data_long.xlsx"))
-isotopes <- read.xlsx(paste0(input, "isotopes_clean.xlsx"))
-metadata <- read.xlsx(paste0(input, "survey_clean.xlsx"))
+alk <- openxlsx::read.xlsx(paste0(input, "alkalinity_clean.xlsx"))
+ecoli <- openxlsx::read.xlsx(paste0(input, "ecoli_clean.xlsx"))
+radon <- openxlsx::read.xlsx(paste0(input, "radon_clean.xlsx"))
+labdata <- openxlsx::read.xlsx(paste0(input, "lab_data_long.xlsx"))
+isotopes <- openxlsx::read.xlsx(paste0(input, "isotopes_clean.xlsx"))
+metadata <- openxlsx::read.xlsx(paste0(input, "survey_clean.xlsx"))
 
 # load dataset of Jessie (2020-2021)
 #
 #
 
 # load historic hydrochemical dataset of 1977 and 1992
-data1977_1992 <- read.xlsx(paste0(input, "hydrochemistry1977-1992.xlsx"))
+data1977_1992 <- openxlsx::read.xlsx(paste0(input, "hydrochemistry1977-1992.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 

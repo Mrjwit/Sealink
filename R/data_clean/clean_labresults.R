@@ -1,8 +1,6 @@
 #
 # Input: raw data of the lab analyses of Ion Chromotography (IC), 
-# Ion Induced Plasma Mass Spectromotry (ICP-MS), Discrete Analyzer (DA),
-# Isotope Analyzer (IA) from TUD and Dissolved Organic Carbon Analyzer (DOC) 
-# from UvA
+# Ion Induced Plasma Mass Spectromotry (ICP-MS) and Discrete Analyzer (DA),
 #         
 # Output: Cleaned lab results merged together in long and wide format
 # 
@@ -55,10 +53,12 @@ ICP_dil_fac <- read.xlsx(paste0(input, "Lab/ICP/ICP preperations data.xlsx"),
                          sheet = "ICP-MS handed in", startRow = 17)
 
 ## DA data file
-DA <- read.xlsx(paste0(input, "Lab/DA/PO4 & NH4 Iris.xlsx"),
-                sheet = "Summary")
-DA2 <- read.xlsx(paste0(input, "Lab/DA/Mike  18-3-22 PO4_MW.xlsx"),
-                 sheet = "summary")
+# DA <- read.xlsx(paste0(input, "Lab/DA/PO4 & NH4 Iris.xlsx"),
+#                 sheet = "Summary")
+# DA2 <- read.xlsx(paste0(input, "Lab/DA/Mike  18-3-22 PO4_MW.xlsx"),
+#                  sheet = "summary")
+DA <- read.xlsx(paste0(input, "Lab/DA/NH4 and PO4 2021.xlsx"),
+             sheet = "FINAL")
 DA_alk <- read.xlsx(paste0(input, "Lab/DA/Alkalinity Iris.xlsx"),
                     sheet = "Summary")
 DA_alk_dil <- read.xlsx(paste0(input, "Lab/DA/Data alkalinity check DA.xlsx"),
@@ -261,45 +261,19 @@ d_IC_wide <- d_IC %>%
 
 
 #### DA PO4 and NH4 edits and checks ####
-
-# add dl and ds based on analysis!!
-
-d_DA <- DA %>%
-  # select relevant columns
-  select(Sample.ID, Results, Units, Test) %>%
-  # add samplecode to lab numbers 
-  left_join(., lab_table %>% filter(analysis == "DA") %>% select(-analysis),
-            by = c("Sample.ID" = "labcode")) %>%
-  # remove rows with calibration standards and blanc samples
-  filter(!is.na(samplecode)) %>%
-  # add parameter column
-  mutate(parameter = ifelse(str_detect(Units, "P"),
-                            "PO4", "NH4"),
-         Units.2 = "mg/l") %>%
-  # Adjust units: Convert mg/l P to mg/l PO4 and mg/l N to mg/l NH4
-  mutate(Results.2 = ifelse(str_detect(Units, "P"),
-                            Results / (30.973762 / 94.9714),
-                            Results / (14.0067 / 18.039))) %>%
-  # add detection limits based on the test used
-  mutate(detection_limit = case_when(
-                            Test == "NH4 1" ~ 0.041, # based on duplicate test with 0.2 mg N/l standard, should be done with 0.1 mg N/l!
-                            Test == "NH4 10" ~ 0.2, # should be 0.2 or 0.04?
-                            Test == "o-PHOS 1" ~ 0.027, # based on duplicate test with 0.1 mg P/l standard
-                            Test == "o-PHOS 5" ~ 0.5, # this is based on lower range, should be based on duplicate test 
-                            Test == "o-PHOS 10" ~ 1.2, # this is based on lower range, should be based on duplicate test 
-                            Test == "o-PHOS 20" ~ 2.0, # this is based on lower range, should be based on duplicate test 
-                            TRUE ~ NA_real_ )) %>%
-  # change detection limit for mg/l units
-  mutate(detection_limit.2 = case_when(
-                            parameter == "NH4" ~ detection_limit / (14.0067 / 18.039) %>% round(digits = 4),
-                            parameter == "PO4" ~ detection_limit / (30.973762 / 94.9714) %>% round(digits = 4),
-                            TRUE ~ NA_real_ )) 
-
-# second DA round
-d2 <- DA2 %>%
-  mutate(parameter = ifelse(str_detect(Units, "P"),
-                            "PO4", "NH4"),
-         Units.2 = "mg/l") %>%
+## New file
+# put parameters and methods in long format
+d_DA <- rbind(DA %>% select(samplecode, NH4, method_NH4) %>%
+                mutate(parameter = "NH4",
+                       Units = "mg N/L") %>%
+                rename(Results = NH4,
+                       Test = method_NH4),
+              DA %>% select(samplecode, PO4, method_PO4) %>%
+                mutate(parameter = "PO4",
+                       Units = "mg P/L") %>%
+                rename(Results = PO4,
+                       Test = method_PO4)) %>% 
+  mutate(Units.2 = "mg/l") %>%
   # Adjust units: Convert mg/l P to mg/l PO4 and mg/l N to mg/l NH4
   mutate(Results.2 = ifelse(str_detect(Units, "P"),
                             Results / (30.973762 / 94.9714),
@@ -315,17 +289,14 @@ d2 <- DA2 %>%
     TRUE ~ NA_real_ )) %>%
   # change detection limit for mg/l units
   mutate(detection_limit.2 = case_when(
-    parameter == "NH4" ~ detection_limit / (14.0067 / 18.039) %>% round(digits = 4),
-    parameter == "PO4" ~ detection_limit / (30.973762 / 94.9714) %>% round(digits = 4),
+    parameter == "NH4" ~ round(detection_limit / (14.0067 / 18.039), digits = 3),
+    parameter == "PO4" ~ round(detection_limit / (30.973762 / 94.9714), digits = 3),
     TRUE ~ NA_real_ )) 
 
 # place different units and corresponding values in long format
 d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units, detection_limit, Test),
            d_DA %>% select(samplecode, parameter, Results.2, Units.2, detection_limit.2, Test) %>% 
-                      rename(Results = Results.2, Units = Units.2, detection_limit = detection_limit.2),
-           d2 %>% select(samplecode, parameter, Results, Units, detection_limit, Test),
-           d2 %>% select(samplecode, parameter, Results.2, Units.2, detection_limit.2, Test) %>%
-                      rename(Results = Results.2, Units = Units.2, detection_limit = detection_limit.2)) %>%
+             rename(Results = Results.2, Units = Units.2, detection_limit = detection_limit.2)) %>%
   rename(value = Results,
          units = Units) %>%
   arrange(samplecode, parameter) %>%
@@ -336,7 +307,84 @@ d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units, detection_limi
          # change negative values and values <dl to the dl
          value = ifelse(value < detection_limit, detection_limit, value),
          method = paste("DA", Test),
-         notes = "") 
+         notes = "")   
+
+## Based on old files
+# add dl and ds based on analysis!!
+# 
+# d_DA <- DA %>%
+#   # select relevant columns
+#   select(Sample.ID, Results, Units, Test) %>%
+#   # add samplecode to lab numbers 
+#   left_join(., lab_table %>% filter(analysis == "DA") %>% select(-analysis),
+#             by = c("Sample.ID" = "labcode")) %>%
+#   # remove rows with calibration standards and blanc samples
+#   filter(!is.na(samplecode)) %>%
+#   # add parameter column
+#   mutate(parameter = ifelse(str_detect(Units, "P"),
+#                             "PO4", "NH4"),
+#          Units.2 = "mg/l") %>%
+#   # Adjust units: Convert mg/l P to mg/l PO4 and mg/l N to mg/l NH4
+#   mutate(Results.2 = ifelse(str_detect(Units, "P"),
+#                             Results / (30.973762 / 94.9714),
+#                             Results / (14.0067 / 18.039))) %>%
+#   # add detection limits based on the test used
+#   mutate(detection_limit = case_when(
+#                             Test == "NH4 1" ~ 0.041, # based on duplicate test with 0.2 mg N/l standard, should be done with 0.1 mg N/l!
+#                             Test == "NH4 10" ~ 0.2, # should be 0.2 or 0.04?
+#                             Test == "o-PHOS 1" ~ 0.027, # based on duplicate test with 0.1 mg P/l standard
+#                             Test == "o-PHOS 5" ~ 0.5, # this is based on lower range, should be based on duplicate test 
+#                             Test == "o-PHOS 10" ~ 1.2, # this is based on lower range, should be based on duplicate test 
+#                             Test == "o-PHOS 20" ~ 2.0, # this is based on lower range, should be based on duplicate test 
+#                             TRUE ~ NA_real_ )) %>%
+#   # change detection limit for mg/l units
+#   mutate(detection_limit.2 = case_when(
+#                             parameter == "NH4" ~ detection_limit / (14.0067 / 18.039) %>% round(digits = 4),
+#                             parameter == "PO4" ~ detection_limit / (30.973762 / 94.9714) %>% round(digits = 4),
+#                             TRUE ~ NA_real_ )) 
+# 
+# # second DA round
+# d2 <- DA2 %>%
+#   mutate(parameter = ifelse(str_detect(Units, "P"),
+#                             "PO4", "NH4"),
+#          Units.2 = "mg/l") %>%
+#   # Adjust units: Convert mg/l P to mg/l PO4 and mg/l N to mg/l NH4
+#   mutate(Results.2 = ifelse(str_detect(Units, "P"),
+#                             Results / (30.973762 / 94.9714),
+#                             Results / (14.0067 / 18.039))) %>%
+#   # add detection limits based on the test used
+#   mutate(detection_limit = case_when(
+#     Test == "NH4 1" ~ 0.041, # based on duplicate test with 0.2 mg N/l standard, should be done with 0.1 mg N/l!
+#     Test == "NH4 10" ~ 0.2, # should be 0.2 or 0.04?
+#     Test == "o-PHOS 1" ~ 0.027, # based on duplicate test with 0.1 mg P/l standard
+#     Test == "o-PHOS 5" ~ 0.5, # this is based on lower range, should be based on duplicate test 
+#     Test == "o-PHOS 10" ~ 1.2, # this is based on lower range, should be based on duplicate test 
+#     Test == "o-PHOS 20" ~ 2.0, # this is based on lower range, should be based on duplicate test 
+#     TRUE ~ NA_real_ )) %>%
+#   # change detection limit for mg/l units
+#   mutate(detection_limit.2 = case_when(
+#     parameter == "NH4" ~ detection_limit / (14.0067 / 18.039) %>% round(digits = 4),
+#     parameter == "PO4" ~ detection_limit / (30.973762 / 94.9714) %>% round(digits = 4),
+#     TRUE ~ NA_real_ )) 
+# 
+# # place different units and corresponding values in long format
+# d <- rbind(d_DA %>% select(samplecode, parameter, Results, Units, detection_limit, Test),
+#            d_DA %>% select(samplecode, parameter, Results.2, Units.2, detection_limit.2, Test) %>% 
+#                       rename(Results = Results.2, Units = Units.2, detection_limit = detection_limit.2),
+#            d2 %>% select(samplecode, parameter, Results, Units, detection_limit, Test),
+#            d2 %>% select(samplecode, parameter, Results.2, Units.2, detection_limit.2, Test) %>%
+#                       rename(Results = Results.2, Units = Units.2, detection_limit = detection_limit.2)) %>%
+#   rename(value = Results,
+#          units = Units) %>%
+#   arrange(samplecode, parameter) %>%
+#   # assume negative values to be <dl and add detection limits based on DA analysis method manual
+#   # where dl NH4 = 0.04 and dl PO4 = 0.027 -> CHECK!! 
+#   mutate(limit_symbol = ifelse(value < detection_limit,
+#                                "<", ""),
+#          # change negative values and values <dl to the dl
+#          value = ifelse(value < detection_limit, detection_limit, value),
+#          method = paste("DA", Test),
+#          notes = "") 
 
 ## compare PO4 from IC and DA
 # check <- d %>% 
@@ -417,53 +465,130 @@ d_ALK <- DA_alk %>%
 
 #### ICP edits and checks ####
 
-# oldnames <- names(ICP)
-# newnames <- c("labcode", "Li", "Be", "B", "Na", "Mg", "Mg26", "Al",
+# oldnames <- names(ICP_total)
+# newnames <- c("labcode", "samplecode", "Li", "Be", "B", "Na", "Mg", "Al",
 #               "Si", "P", "S", "K", "Ca", "Ti", "V", "Cr", "Mn",
-#               "Fe56", "Fe57", "Cu", "Zn", "Co", "Ni", "As", "Se",
+#               "Fe", "Cu", "Zn", "Co", "Ni", "As", "Se",
 #               "Mo", "Ag", "Cd", "Sb", "Ba", "Pb")
-# remove.list <- paste(c("SRM", "ERM", "mg/"), collapse = '|')
+# remove.list <- paste(c("SRM", "ERM", "mg/", "Analysis"), collapse = '|')
 oldnames <- names(ICP_total)
-newnames <- c("labcode", "samplecode", "Li", "Be", "B", "Na", "Mg", "Al",
-              "Si", "P", "S", "K", "Ca", "Ti", "V", "Cr", "Mn",
-              "Fe", "Cu", "Zn", "Co", "Ni", "As", "Se",
-              "Mo", "Ag", "Cd", "Sb", "Ba", "Pb")
+newnames <- c("labcode", "samplecode", "Li", "Li_undil", "Be", "Be_undil", 
+              "B", "Na", "Mg", "Al", "Si", "P", "S", "K", "Ca", 
+              "Ti", "Ti_undil", "V", "V_undil", "Cr", "Cr_undil", 
+              "Mn", "Mn_undil", "Fe", "Fe_undil", "Cu", "Cu_undil", 
+              "Zn", "Zn_undil", "Co", "Co_undil", "Ni", "Ni_undil", 
+              "As", "As_undil", "Se", "Se_undil", "Mo", "Mo_undil", 
+              "Ag", "Ag_undil", "Cd", "Cd_undil", "Sb", "Sb_undil", 
+              "Ba", "Ba_undil", "Pb", "Pb_undil")
 remove.list <- paste(c("SRM", "ERM", "mg/", "Analysis"), collapse = '|')
 
 # values with #Name indicates that the detector is overloaded
 # values with x indicates that the value is above the calibration line
 # values with b indicates that the value is below the detection limit ??
 
-# for final combined ICP dataset
 d <- ICP_total %>%
   # rename column names
   rename_with(~ newnames[which(oldnames == .x)], .cols = oldnames) %>%
   #remove rows that are no samples
   filter(!str_detect(labcode, remove.list)) %>%
   # convert all elements to characters so they can be placed in one column
-  mutate_at(c(3:30), as.character) %>%
+  mutate_at(c(3:49), as.character) %>%
   #place paramters in long format
-  pivot_longer(., cols = c(Li:Pb),
+  pivot_longer(., cols = c(Li:Pb_undil),
                values_to = "value",
                names_to = "parameter") %>%
-  # add limit symbol, detection limit values and units
+  # add limit symbol based on string, detection limit values and units
   mutate(limit_symbol = ifelse(str_detect(value, "b"), "<", 
                                ifelse(str_detect(value, "x"), ">", "")),
+         # range = 1 - 100 ug/l, dl = 0.1?
+         detection_limit = 1.0,
          units = "ug/l") %>%
   # change values to numeric 
   mutate(value = parse_number(value)) %>%
   # change units for Ca, Fe, K, Mg, Na, P, S, en Si
-  mutate(value = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Na", "P", "S", "Si"),
+  mutate(value = ifelse(parameter %in% c("Ca", "Fe", "Fe_undil", "K", "Mg", "Na", "P", "S", "Si"),
                         value / 1000, value),
-         units = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+         units = ifelse(parameter %in% c("Ca", "Fe", "Fe_undil", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
                         "mg/l", units),
-         limit_symbol = ifelse(is.na(value), "", limit_symbol),
-         detection_limit = ifelse(limit_symbol == "<", value, NA),
+         detection_limit = ifelse(parameter %in% c("Ca", "Fe", "Fe_undil", "K", "Mg", "Na", "P", "S", "Si"),
+                                  detection_limit / 1000, detection_limit)) %>%
+  # change limit symbol for values <= 0
+  mutate(limit_symbol = ifelse(is.na(value), "", 
+                               ifelse(value <= 1, "<", limit_symbol)),
+         # change detection limits
+         #detection_limit = ifelse(limit_symbol == "<", value, NA),
+         analysis = ifelse(str_detect(parameter, "undil"),"undiluted", "diluted"),
          method = "ICP-MS") %>%
-  # change negative values to zero
-  mutate(value = ifelse(value < 0, 0, value)) %>%
+  mutate(parameter = gsub("_undil", "", parameter)) %>%
+  # change values < dl to dl
+  mutate(value = ifelse(value <= detection_limit, detection_limit, value)) %>%
   # select only relevant columns
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
+  select(samplecode, parameter, analysis, value, limit_symbol, detection_limit, units, method)
+
+# choose right values from diluted and undiluted samples
+dat <- d %>%
+  #select(-detection_limit) %>%
+  pivot_wider(names_from = analysis,
+              values_from = c(value, limit_symbol)) %>%
+  mutate(value = case_when(
+    is.na(value_undiluted) ~ value_diluted, # for Na, Ca, etc
+    is.na(value_diluted) ~ value_undiluted, # for trace elements
+    limit_symbol_diluted == "<" & !is.na(value_undiluted) ~ value_undiluted,
+    limit_symbol_undiluted == "<" & limit_symbol_diluted != "<" ~ value_diluted, #
+    limit_symbol_undiluted != "<" & !is.na(value_undiluted) & limit_symbol_diluted != "<" & !is.na(value_diluted) ~ value_undiluted, # both are measured above dl, then undiluted has preference
+    TRUE ~ 99999 )) %>%
+  mutate(limit_symbol = case_when(
+    value == value_diluted & limit_symbol_diluted == "<" ~ "<",
+    value == value_diluted & limit_symbol_diluted == ">" ~ ">", # for 1x B sample
+    value == value_undiluted & limit_symbol_undiluted == "<" ~ "<",
+    TRUE ~ "" )) %>%
+  mutate(notes = case_when(
+    value == 1 ~ "undiluted",
+    value == value_diluted ~ "diluted",
+    value == value_undiluted ~ "undiluted",
+    TRUE ~ ""))
+
+# check if everythin went alright
+if(nrow(dat %>% filter(value == 99999)) > 0) {
+  stop("some values are not checked properly")
+}
+
+# put back in right format to merge with other results
+d_ICP <- dat %>%
+  filter(samplecode != "GW030B") %>%
+  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes) %>%
+  arrange(samplecode)
+
+# for final combined ICP dataset
+# d <- ICP_total %>%
+#   # rename column names
+#   rename_with(~ newnames[which(oldnames == .x)], .cols = oldnames) %>%
+#   #remove rows that are no samples
+#   filter(!str_detect(labcode, remove.list)) %>%
+#   # convert all elements to characters so they can be placed in one column
+#   mutate_at(c(3:30), as.character) %>%
+#   #place paramters in long format
+#   pivot_longer(., cols = c(Li:Pb),
+#                values_to = "value",
+#                names_to = "parameter") %>%
+#   # add limit symbol, detection limit values and units
+#   mutate(limit_symbol = ifelse(str_detect(value, "b"), "<", 
+#                                ifelse(str_detect(value, "x"), ">", "")),
+#          units = "ug/l") %>%
+#   # change values to numeric 
+#   mutate(value = parse_number(value)) %>%
+#   # change units for Ca, Fe, K, Mg, Na, P, S, en Si
+#   mutate(value = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Na", "P", "S", "Si"),
+#                         value / 1000, value),
+#          units = ifelse(parameter %in% c("Ca", "Fe", "K", "Mg", "Mg26", "Na", "P", "S", "Si"),
+#                         "mg/l", units),
+#          limit_symbol = ifelse(is.na(value), "", limit_symbol),
+#          detection_limit = ifelse(limit_symbol == "<", value, NA),
+#          method = "ICP-MS") %>%
+#   # change negative values to zero
+#   mutate(value = ifelse(value < 0, 0, value)) %>%
+#   # select only relevant columns
+#   select(samplecode, parameter, value, limit_symbol, detection_limit, units, method)
 
 # # for first ICP dataset
 # d <- ICP %>%
@@ -518,17 +643,6 @@ d <- ICP_total %>%
 #   # select only relevant columns
 #   select(samplecode, parameter, value, value_dil, limit_symbol, detection_limit, units, method)
 
-# Sample GW030 has been measured twice under GW030A and GW030B
-# the results need to be checked and returned under GW030
-# for now easy fix by taking GW030A as GW030
-d <- d %>%
-  mutate(samplecode = ifelse(samplecode == "GW030A", "GW030", samplecode)) %>%
-  filter(samplecode != "GW030B")
-# d_30 <- d %>%
-#   filter(samplecode %in% c("GW030A", "GW030B")) %>%
-#   pivot_wider(names_from = samplecode,
-#               values_from = value)
-  
 
 ## Some quick checks, move elsewhere later!
 # Dilution factors in histogram
@@ -624,21 +738,12 @@ d_ICP_wide <- d %>%
   pivot_wider(names_from = parameter,
               values_from = value) 
     
-# d_ICP <- d %>% select(-value_dil) %>%
-#   mutate(notes = "")
-d_ICP <- d %>%
-  mutate(notes = "")
 
 # d <- d %>%
 #   filter(parameter %in% c("Na", "Ca", "Mg", "B", "K", "Fe", "Si")) %>%
 #   select(samplecode, parameter, limit_symbol, value, units, method) %>%
 #   arrange(samplecode, parameter)
 # write.xlsx(d, paste0(output, "Clean_data/lab_ICP_long.xlsx"))
-
-#### Isotopes ####
-
-
-#### DOC ####
 
 #### Combine all labresults ####
 d <- rbind(d_IC, d_DA, d_ALK, d_ICP) %>%
@@ -652,12 +757,19 @@ d_wide <- d %>%
   pivot_wider(names_from = parameter,
               values_from = value) 
 
+# d <- d %>%
+#   filter(parameter %in% c("Na", "Ca", "Mg", "B", "K", "Fe", "Si", "NH4"),
+#          units != "mg N/L ") %>%
+#   select(samplecode, parameter, limit_symbol, value, units, method) %>%
+#   arrange(samplecode, parameter)
+# write.xlsx(d, paste0(output, "Clean_data/lab_ICP_long.xlsx"))
+
 ###############################################################################
 # save data
 ###############################################################################
 
-write.xlsx(d, paste0(output, "Clean_data/lab_data_long.xlsx"))
-write.xlsx(d_wide, paste0(output, "Clean_data/lab_data_wide.xlsx"))
-write.xlsx(d_IC_wide, paste0(output, "Clean_data/lab_IC_wide.xlsx"))
-write.xlsx(d_ICP_wide, paste0(output, "Clean_data/lab_ICP_wide.xlsx"))
+openxlsx::write.xlsx(d, paste0(output, "Clean_data/lab_data_long.xlsx"))
+openxlsx::write.xlsx(d_wide, paste0(output, "Clean_data/lab_data_wide.xlsx"))
+openxlsx::write.xlsx(d_IC_wide, paste0(output, "Clean_data/lab_IC_wide.xlsx"))
+openxlsx::write.xlsx(d_ICP_wide, paste0(output, "Clean_data/lab_ICP_wide.xlsx"))
 

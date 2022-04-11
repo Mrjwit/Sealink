@@ -4,8 +4,8 @@
 # Output: Cleaned file of isotopes analysis
 # 
 # Dependencies: none
-#
-#
+# 
+# 
 # Author: Mike Wit
 # Date: 09-02-2022
 # Edit: XX-XX-XXXX
@@ -29,7 +29,7 @@ pacman::p_load(tidyverse, openxlsx, ggmap,
 # set data file location
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
 
-# isotopes data file
+# isotopes Summary data files
 d1 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6362--W-6381_2H_BriefSummary.xlsx")) # samples 
 d2 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6392--W-6401_2H_BriefSummary.xlsx"))
 d3 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6427--W-6451_2H_BriefSummary.xlsx"))
@@ -37,6 +37,15 @@ d3 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6427--W-6451_2H_BriefSummary.xlsx"
 O1 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6362--W-6381_18O_BriefSummary.xlsx"))
 O2 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6392--W-6401_18O_BriefSummary.xlsx"))
 O3 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6427--W-6451_18O_BriefSummary.xlsx"))
+
+# isotopes raw data files
+dr1 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6362--W-6381_2H_BriefSummary.xlsx")) # samples 
+dr2 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6392--W-6401_2H_BriefSummary.xlsx"))
+dr3 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6427--W-6451_2H_BriefSummary.xlsx"))
+
+Or1 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6362--W-6381_18O_BriefSummary.xlsx"))
+Or2 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6392--W-6401_18O_BriefSummary.xlsx"))
+Or3 <- read.xlsx(paste0(input, "Lab/Isotopes/W-6427--W-6451_18O_BriefSummary.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -61,6 +70,7 @@ d2H <- deuterium %>%
          value = MeanDeltaOfInjs) %>%
   select(samplecode, parameter, value) %>%
   group_by(samplecode) %>%
+  filter(!is.na(value)) %>%
   mutate(namen = paste0("waarde", row_number())) %>%
   ungroup() %>%
   pivot_wider(names_from = namen,
@@ -69,31 +79,40 @@ d2H <- deuterium %>%
 ggplot(d2H, aes(x = waarde1, y = waarde2)) +
   geom_point() +
   geom_abline(slope = 1, linetype = "dashed") +
+  geom_smooth(method = 'lm', formula = y~x) +
   scale_x_continuous(name = expression(paste(delta ^{2}, "H", "(\u2030)", " value 1"))) +
   scale_y_continuous(name = expression(paste(delta ^{2}, "H", "(\u2030)", " value 2"))) +
-  coord_cartesian(xlim = c(-15, -4),
-                  ylim = c(-15, -4)) +
+  # coord_cartesian(xlim = c(-15, -4),
+  #                 ylim = c(-15, -4)) +
   theme_bw()
 
 # 18O
+# there are sometimes 3 values
+# first: filter out the values where no std are present (these values are based on 1 measurement)
+# second: filter out the values with the highest std?
+# second: filter out the values based on the lowest amount of values (normally 5)
 d18O <- oxygen18 %>%
   rename(samplecode = Sample.ID,
          parameter = Isotope,
-         value = MeanDeltaOfInjs) %>%
-  select(samplecode, parameter, value) %>%
+         value = MeanDeltaOfInjs,
+         std = StdDevOfDeltaOfInjs) %>%
+  select(samplecode, parameter, value, std) %>%
   group_by(samplecode) %>%
+  filter(!is.na(std)) %>%
   mutate(namen = paste0("waarde", row_number())) %>%
   ungroup() %>%
+  select(-std) %>%
   pivot_wider(names_from = namen,
               values_from = value)
 
 ggplot(d18O, aes(x = waarde1, y = waarde2)) +
   geom_point() +
   geom_abline(slope = 1, linetype = "dashed") +
+  #geom_smooth(method = 'lm', formula = y~x) +
   scale_x_continuous(name = expression(paste(delta ^{18}, "O", "(\u2030)", " value 1"))) +
   scale_y_continuous(name = expression(paste(delta ^{18}, "O", "(\u2030)", " value 2"))) +
-  coord_cartesian(xlim = c(-3, -0.5),
-                  ylim = c(-3, -0.5)) +
+  # coord_cartesian(xlim = c(-3, -0.5),
+  #                 ylim = c(-3, -0.5)) +
   theme_bw()
 
 # select relevant information and put in right format

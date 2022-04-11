@@ -138,7 +138,7 @@ data <- rbind(data, d) %>%
 ###############################################################################
 
 # add main watertypes 
-data$watertype <- data$watercode %>% 
+data$sampletype <- data$watercode %>% 
   recode("AI" = "air",
          "GW" = "groundwater",
          "SR" = "surfacewater",
@@ -161,10 +161,10 @@ data$subtype <- data$watercode %>%
          "TW" = "tapwater",
          "SE" = "seawater") 
 
-# differentiate between treated (WW001) and untreated (WW002-WW003) wastewater
+# differentiate between treated (WW001, SW001-SW002) and untreated (WW002-WW003) wastewater
 data <- data %>%
   mutate(subtype = case_when(
-    samplecode == "WW001" ~ "treated wastewater",
+    samplecode %in% c("WW001", "SW001", "SW002") ~ "treated wastewater",
     samplecode %in% c("WW002", "WW003") ~ "untreated wastewater",
     TRUE ~ subtype ))
 
@@ -181,21 +181,25 @@ d <- data1977_1992 %>%
          method = "",
          notes = "",
          watercode = "GW",
-         watertype = "groundwater",
-         subtype = "groundwater") %>%
+         sampletype = "groundwater",
+         subtype = "groundwater",
+         xcoord = lon,
+         ycoord = lat) %>%
   select(samplecode, year, parameter, value, limit_symbol, detection_limit,
-         units, method, notes, watercode, watertype, subtype)
+         units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
 
-data <- rbind(data %>% mutate(year = 2021), d) %>%
+data <- rbind(data %>% mutate(year = 2021,
+                              xcoord = NA,
+                              ycoord = NA), d) %>%
   select(samplecode, year, parameter, value, limit_symbol, detection_limit,
-         units, method, notes, watercode, watertype, subtype)
+         units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
 
 ###############################################################################
 # save final database
 ###############################################################################
 
 # hydrochemistry
-write.xlsx(data, paste0(output, "Clean_data/hydrochemistry_curacao.xlsx"))
+openxlsx::write.xlsx(data, paste0(output, "Clean_data/hydrochemistry_curacao.xlsx"))
 
 # metadata file
 

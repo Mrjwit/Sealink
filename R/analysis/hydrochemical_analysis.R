@@ -21,7 +21,8 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, openxlsx, ggmap, 
                sf, leaflet, data.table, cowplot, data.table,
-               smwrGraphs, scales)
+               scales, corrplot, Hmisc, ggpubr,
+               ggbiplot)
 
 ###############################################################################
 # load data
@@ -31,7 +32,7 @@ pacman::p_load(tidyverse, openxlsx, ggmap,
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
 
 # load cleaned data
-data <- read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
+data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -72,7 +73,7 @@ d <- data %>%
     parameter == "K" ~ value / 39.0983,
     parameter == "NH4" & limit_symbol != "<" ~ value / 18.04,
     TRUE ~ meql )) %>%
-  select(samplecode, parameter, meql, watertype) %>%
+  select(samplecode, parameter, meql, sampletype) %>%
   pivot_wider(names_from = parameter,
               values_from = meql) %>%
   filter(!is.na(Cl))
@@ -290,6 +291,7 @@ d <- data %>%
   filter(!is.na(Cl))
 d <- toPercent(d)
 
+# naje stiff diagrams
 with(d, stiffPlot)
 
 
@@ -330,21 +332,109 @@ d <- data %>%
   select(samplecode, parameter, meql, sampletype) %>%
   pivot_wider(names_from = parameter,
               values_from = meql) %>%
-  filter(!is.na(Cl))
+  filter(!is.na(Cl)) %>%
+  select(samplecode, sampletype, Cl, SO4, HCO3, Na, K, Ca, Mg)
 d <- toPercent(d)
 
 d <- d %>%
   mutate(watertype = case_when(
     Ca + Mg > 50 & HCO3 > 50 ~ "Ca-HCO3",   # carbonate dissolution
-    Ca + Mg > 50 & Cl > 50 ~ "Ca-Cl",       # salinizing groundwater with ion exchange of Na for Ca
-    Na + K > 50 & Cl > 50 ~ "Na-Cl",        # seawater origin
+    Ca + Mg > 50 & Cl + SO4 > 50 ~ "Ca-Cl",       # salinizing groundwater with ion exchange of Na for Ca
+    Na + K > 50 & Cl + SO4 > 50 ~ "Na-Cl",        # seawater origin
     Na + K > 50 & HCO3 > 50 ~ "Na-HCO3",    # freshening groundwater with ion exchange of Ca for Na
   TRUE ~ "Mixed type" ))                    # mixing water
+
+  
+  
+d <- d %>%
+  rowwise() %>%
+  mutate(an = names(.[3:5])[which.max(c_across(cols = Cl:HCO3))],
+         cat = names(.[6:9])[which.max(c_across(cols = Na:Mg))]) %>%
+  mutate(type = paste(cat, an, sep = "-"))
 
 d %>% group_by(watertype) %>%
   summarise(n()) %>%
   view()
-  
+
+
+#### Correlation matrix ####
+## metals ##
+
+# all samples
+d <- data %>%
+  filter(year == 2021,
+         !is.na(value),
+         method == "ICP-MS") %>%
+  # remove Ag and Cd since all values are <dl
+  filter(!parameter %in% c("Ag", "Cd")) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+corr <- cor(d[,-1], use = "complete.obs", method = "pearson")
+# data are not normally distributed, so use either Kendall or Spearman!
+# test for normal distribution
+# 1. use Shaprio-Wilk normality test, if p >= 0.05 then it follows normal distribution (null hypothesis)
+shapiro.test(d$Mg)
+# 2. use Q-Q plot (quantile-quantile plot) to draw correlation between sample and theoretical normal distribution
+ggqqplot(d$Mg, ylab = "Mg")
+# test correlation of 2 parameters
+res <- cor.test(d$Mg, d$Ca, method = "kendall")
+# get p-value res$p.value
+# get correlation coefficient res$estimate
+# so use Kendall or Spearman
+#corr <- rcorr(d[,-1], use = "complete.obs", method = "kendall") # better, but package Hmisc needed
+corr <- cor(d[,-1], use = "complete.obs", method = "kendall")
+p_mat <- cor_pmat(d[,-1])
+#ggcorrplot(corr, method = "circle", type = "lower", p.mat = p_mat)
+png(paste0(output, "Output/Statistics/figures/correlation_matrix_metals_terrestrial.png"), 
+    width = 10, height = 10, res = 300, units = "cm")
+corrplot(corr, method = "circle", type = "lower", order = "hclust", 
+         p.mat = p_mat, sig.level = 0.05, insig = "blank")
+dev.off()
+
+corrplot(corr, tl.col = "brown", tl.srt = 30, bg = "white",
+         type = "full")
+
+# only groundwater
+d <- data %>%
+  filter(year == 2021,
+         !is.na(value),
+         method == "ICP-MS",
+         sampletype == "groundwater") %>%
+  # remove Ag and Cd since all values are <dl
+  filter(!parameter %in% c("Ag", "Cd")) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+corr <- cor(d[,-1], use = "complete.obs", method = "kendall")  
+corrplot(corr, method = "circle", type = "lower", #order = "hclust", 
+         p.mat = p_mat, sig.level = 0.05, insig = "blank")
+
+#### PCA ####
+d <- data %>%
+  filter(year == 2021,
+         !is.na(value),
+         method == "ICP-MS") %>%
+  # remove Ag and Cd since all values are <dl
+  filter(!parameter %in% c("Ag", "Cd")) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+g <- ggbiplot(d,
+              obs.scale = 1,
+              var.scale = 1,
+              groups = training$Species,
+              ellipse = TRUE,
+              circle = TRUE,
+              ellipse.prob = 0.68)
+g <- g + scale_color_discrete(name = '')
+g <- g + theme(legend.direction = 'horizontal',
+               legend.position = 'top')
+print(g)
+ 
 
 #### Plots ####
 

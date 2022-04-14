@@ -31,25 +31,25 @@ pacman::p_load(tidyverse, openxlsx, ggmap, skimr,
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
 
 ## IC data files
-IC <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iris_Verstappen.xlsx"),
+IC <- openxlsx::read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iris_Verstappen.xlsx"),
                 sheet = "Report", startRow = 2, check.names = T) 
 # NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
 
 # Diluted IC samples
-IC_dil <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iris_Verstappen_verdunning.xlsx"),
+IC_dil <- openxlsx::read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Iris_Verstappen_verdunning.xlsx"),
                     sheet = "Report", startRow = 2, check.names = T) 
 # IC extra samples and redilution
-IC2 <- read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Start_MW_JG.xlsx"),
+IC2 <- openxlsx::read.xlsx(paste0(input, "Lab/IC/IC-Calculations_v2.1_20180316(+Ac)_Start_MW_JG.xlsx"),
                  sheet = "Report2", startRow = 2, check.names = T) 
 
 # NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
 
 ## ICP data file
-ICP_total <- read.xlsx(paste0(input, "Lab/ICP/ICP-results_GW001_WW003.xlsx"),
+ICP_total <- openxlsx::read.xlsx(paste0(input, "Lab/ICP/ICP-results_GW001_WW003.xlsx"),
                        sheet = "FINAL")
-ICP <- read.xlsx(paste0(input, "Lab/ICP/20220124_Mike_Iris_all_elements.xlsx"),
+ICP <- openxlsx::read.xlsx(paste0(input, "Lab/ICP/20220124_Mike_Iris_all_elements.xlsx"),
                  sheet = "summary")
-ICP_dil_fac <- read.xlsx(paste0(input, "Lab/ICP/ICP preperations data.xlsx"),
+ICP_dil_fac <- openxlsx::read.xlsx(paste0(input, "Lab/ICP/ICP preperations data.xlsx"),
                          sheet = "ICP-MS handed in", startRow = 17)
 
 ## DA data file
@@ -57,11 +57,11 @@ ICP_dil_fac <- read.xlsx(paste0(input, "Lab/ICP/ICP preperations data.xlsx"),
 #                 sheet = "Summary")
 # DA2 <- read.xlsx(paste0(input, "Lab/DA/Mike  18-3-22 PO4_MW.xlsx"),
 #                  sheet = "summary")
-DA <- read.xlsx(paste0(input, "Lab/DA/NH4 and PO4 2021.xlsx"),
+DA <- openxlsx::read.xlsx(paste0(input, "Lab/DA/NH4 and PO4 2021.xlsx"),
              sheet = "FINAL")
-DA_alk <- read.xlsx(paste0(input, "Lab/DA/Alkalinity Iris.xlsx"),
+DA_alk <- openxlsx::read.xlsx(paste0(input, "Lab/DA/Alkalinity Iris.xlsx"),
                     sheet = "Summary")
-DA_alk_dil <- read.xlsx(paste0(input, "Lab/DA/Data alkalinity check DA.xlsx"),
+DA_alk_dil <- openxlsx::read.xlsx(paste0(input, "Lab/DA/Data alkalinity check DA.xlsx"),
                         sheet = "Samples in DA")
 
 # Isotope data file
@@ -71,7 +71,7 @@ DA_alk_dil <- read.xlsx(paste0(input, "Lab/DA/Data alkalinity check DA.xlsx"),
 
 
 # Table to link labcodes of different analysis to samplecodes
-lab_table <- read.xlsx("C:/Users/mikewit/Documents/SEALINK/Documents/Lab/vertaaltabel_labmonsters.xlsx",
+lab_table <- openxlsx::read.xlsx("C:/Users/mikewit/Documents/SEALINK/Documents/Lab/vertaaltabel_labmonsters.xlsx",
                        sheet = "TOTAAL")
 
 # output file location
@@ -512,9 +512,9 @@ d <- ICP_total %>%
                         "mg/l", units),
          detection_limit = ifelse(parameter %in% c("Ca", "Fe", "Fe_undil", "K", "Mg", "Na", "P", "S", "Si"),
                                   detection_limit / 1000, detection_limit)) %>%
-  # change limit symbol for values <= 0
+  # change limit symbol for values <= 1 ug/l
   mutate(limit_symbol = ifelse(is.na(value), "", 
-                               ifelse(value <= 1, "<", limit_symbol)),
+                               ifelse(value <= detection_limit, "<", limit_symbol)),
          # change detection limits
          #detection_limit = ifelse(limit_symbol == "<", value, NA),
          analysis = ifelse(str_detect(parameter, "undil"),"undiluted", "diluted"),
@@ -755,7 +755,9 @@ d_wide <- d %>%
          value = paste(limit_symbol, value)) %>%
   select(samplecode, parameter, value) %>%
   pivot_wider(names_from = parameter,
-              values_from = value) 
+              values_from = value) %>%
+  unnest() %>%
+  distinct()
 
 # d <- d %>%
 #   filter(parameter %in% c("Na", "Ca", "Mg", "B", "K", "Fe", "Si", "NH4"),
@@ -769,6 +771,7 @@ d_wide <- d %>%
 ###############################################################################
 
 openxlsx::write.xlsx(d, paste0(output, "Clean_data/lab_data_long.xlsx"))
+write.csv(d_wide, paste0(output, "Clean_data/lab_data_wide.csv"))
 openxlsx::write.xlsx(d_wide, paste0(output, "Clean_data/lab_data_wide.xlsx"))
 openxlsx::write.xlsx(d_IC_wide, paste0(output, "Clean_data/lab_IC_wide.xlsx"))
 openxlsx::write.xlsx(d_ICP_wide, paste0(output, "Clean_data/lab_ICP_wide.xlsx"))

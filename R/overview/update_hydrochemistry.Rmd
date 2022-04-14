@@ -3,8 +3,8 @@ title: "Update Hydrochemistry"
 author: "Mike Wit"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -574,6 +574,8 @@ ggplot(data = pts) +
 ```
 
 ```{r, echo=FALSE}
+# Map of NO3 values
+
 ggplot(data = pts %>% filter(watertype == "groundwater")) +
   geom_sf(data = cur_coastline, fill = "antiquewhite") +
   geom_sf(aes(fill = NO3_1), 

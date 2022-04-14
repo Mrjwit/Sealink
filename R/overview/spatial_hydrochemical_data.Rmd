@@ -1,0 +1,431 @@
+---
+title: "Spatial hydrochemical data maps"
+author: "Mike Wit"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_notebook
+---
+
+```{r, include = FALSE}
+## Initialization
+# Loading packages
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, openxlsx, ggmap, ggspatial, hrbrthemes, viridis,
+               sf, leaflet, data.table, cowplot, data.table, ggnewscale,
+               gridExtra, qpdf)
+
+## Loading data
+# set data file location
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
+
+# load cleaned data
+data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
+metadata <- openxlsx::read.xlsx(paste0(input, "survey_clean.xlsx"))
+
+# importing GIS layers
+input_GIS <- "C:/Users/mikewit/Documents/SEALINK/GIS/SEALINK/"
+cur_coastline <- st_read(paste0(input_GIS,
+                                "Layers/Topography/CUR_Coastline.shp")) %>%
+  st_transform(crs = 4326)
+cur_geology <- st_read(paste0(input_GIS,
+                                "Layers/Geology/Geology Shapefile EATH.shp")) %>%
+  st_transform(crs = 4326)
+
+cur_zonalmap <- st_read(paste0(input_GIS,
+                                "Layers/Landuse/Curacao_EOP.shp")) %>%
+  st_transform(crs = 4326)
+
+# output file location
+output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
+
+## Editing data
+
+# Add coordinates 
+dat2021 <- data %>%
+  filter(year == 2021) %>%
+  select(-c(xcoord, ycoord)) %>%
+  left_join(., metadata %>% select(samplecode, xcoord, ycoord))
+
+data <- rbind(dat2021, data %>% filter(year != 2021))
+
+# check for missing coordinates
+data %>% 
+  select(samplecode, xcoord, ycoord) %>%
+  filter(is.na(xcoord)) %>%
+  distinct()
+
+theme_set(theme_bw())
+
+pts <- st_as_sf(data %>% filter(year == 2021,
+                                !is.na(xcoord)), coords = c("xcoord", "ycoord"),
+                crs = 4326, agr = "constant") 
+
+```
+
+# Making maps
+
+## Nutrients
+```{r}
+# NO3 map
+ggplot(data = pts %>% filter(parameter == "NO3",
+                             watertype == "groundwater"),
+       aes(fill = cut(value, breaks = c(0, 5, 10, 25, 50, 100, 300)))) +
+  geom_sf(data = cur_coastline, fill = "antiquewhite") +
+  geom_sf(#aes(fill = value), 
+          colour = "black",
+          pch = 21,
+          size = 2) +
+  # scale_fill_brewer(type = "qual",
+  #                   palette = "Spectral",
+  #                   name = "NO3 [mg/l]",
+  #                   direction = -1,
+  #                   labels = c("0-5",
+  #                              "5-10",
+  #                              "10-25",
+  #                              "25-50",
+  #                              "50-100",
+  #                              ">100")) +
+  scale_fill_manual(name = "NO3 [mg/l]",
+                    labels = c("0 - 5",
+                               "5 - 10",
+                               "10 - 25",
+                               "25 - 50",
+                               "50 - 100",
+                               ">100"),
+                    values = c("cornflowerblue",
+                               "lightgreen",
+                               "darkolivegreen4",
+                               "yellow",
+                               "orange",
+                               "red")
+                    ) +
+  coord_sf(xlim = c(-69.15, -68.75),
+           ylim = c(12.0, 12.4)) +
+  ggtitle("Nitrate in groundwater") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+
+ggplot(data = pts %>% filter(parameter == "NO3",
+                             watertype == "groundwater"),
+       aes(fill = cut(value, breaks = c(0, 0.1, 5, 10, 25, 50, 100, 300)))) +
+  geom_sf(data = cur_coastline, fill = "antiquewhite") +
+  geom_sf(#aes(fill = value), 
+          colour = "black",
+          pch = 21,
+          size = 2) +
+  # scale_fill_brewer(type = "qual",
+  #                   palette = "Spectral",
+  #                   name = "NO3 [mg/l]",
+  #                   direction = -1,
+  #                   labels = c("0-5",
+  #                              "5-10",
+  #                              "10-25",
+  #                              "25-50",
+  #                              "50-100",
+  #                              ">100")) +
+  scale_fill_manual(name = "NO3 [mg/l]",
+                    labels = c("<0.1",
+                               "0.1 - 5",
+                               "5 - 10",
+                               "10 - 25",
+                               "25 - 50",
+                               "50 - 100",
+                               ">100"),
+                    values = c("grey",
+                               "cornflowerblue",
+                               "lightgreen",
+                               "yellow",
+                               "orange",
+                               "red",
+                               "mediumvioletred")
+                    ) +
+  coord_sf(xlim = c(-69.15, -68.75),
+           ylim = c(12.0, 12.4)) +
+  ggtitle("Nitrate in groundwater") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+
+#PO4
+ggplot(data = pts %>% filter(parameter == "PO4",
+                             method == "IC",
+                             watertype == "groundwater"),
+       aes(fill = cut(value, breaks = c(0, 0.1, 1, 2.5, 5, 10, 30)))) +
+  geom_sf(data = cur_coastline, fill = "antiquewhite") +
+  geom_sf(#aes(fill = value), 
+          colour = "black",
+          pch = 21,
+          size = 2) +
+  scale_fill_manual(name = "PO4 [mg/l]",
+                    labels = c("< 0.1",
+                               "0.1 - 1",
+                               "1 - 2.5",
+                               "2.5 - 5",
+                               "5 - 10",
+                               "10 - 30"),
+                    values = c("cornflowerblue",
+                               "lightgreen",
+                               "darkolivegreen4",
+                               "yellow",
+                               "orange",
+                               "red")
+                    ) +
+  coord_sf(xlim = c(-69.15, -68.75),
+           ylim = c(12.0, 12.4)) +
+  ggtitle("Phosphate in groundwater") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+
+# NH4
+ggplot(data = pts %>% filter(parameter == "NH4",
+                             units == "mg/l",
+                             watertype == "groundwater"),
+       aes(fill = cut(value, breaks = c(0, 0.26, 0.5, 1, 2.5, 5, 10, 100)))) +
+  geom_sf(data = cur_coastline, fill = "antiquewhite") +
+  geom_sf(#aes(fill = value), 
+          colour = "black",
+          pch = 21,
+          size = 2) +
+  scale_fill_manual(name = "NH4 [mg/l]",
+                    labels = c("< 0.26",
+                               "0.26 - 0.5",
+                               "0.5 - 1",
+                               "1 - 2.5",
+                               "2.5 - 5",
+                               ">5"),
+                    values = c("cornflowerblue",
+                               "lightgreen",
+                               "darkolivegreen4",
+                               "yellow",
+                               "orange",
+                               "red")
+                    ) +
+  coord_sf(xlim = c(-69.15, -68.75),
+           ylim = c(12.0, 12.4)) +
+  ggtitle("Ammonium in groundwater") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+
+# merging PDF's
+
+
+setwd(paste0(output, "Output/Figures/Maps/Nutrients/"))
+file_list <- list.files()
+
+qpdf::pdf_combine(input = unlist(file_list),
+                  output = paste0(output, "Output/Figures/Maps/Metals/1.Metals_groundwater2.pdf"))
+
+```
+
+
+```{r}
+# metals
+metals <- pts %>% 
+  filter(method == "ICP-MS") %>%
+  filter(!parameter %in% c("S", "P")) %>%
+  filter(!is.na(value)) %>%
+  mutate(value = ifelse(value < 1, 1, value)) %>%
+  mutate(name = case_when(
+    parameter == "Ag" ~ "Silver", parameter == "Al" ~ "Aluminium", parameter == "As" ~ "Arsenic",
+    parameter == "B" ~ "Boron", parameter == "Ba" ~ "Barium", parameter == "Be" ~ "Beryllium",
+    parameter == "Ca" ~ "Calcium", parameter == "Cd" ~ "Cadmium", parameter == "Co" ~ "Cobalt",
+    parameter == "Cr" ~ "Chromium", parameter == "Cu" ~ "Copper", parameter == "Fe" ~ "Iron",
+    parameter == "Fe56" ~ "Iron-56", parameter == "Fe57" ~ "Iron-57", parameter == "K" ~ "Potassium",
+    parameter == "Li" ~ "Lithium", parameter == "Mg" ~ "Magnesium", parameter == "Mg26" ~ "Magnesium-26",
+    parameter == "Mn" ~ "Manganese", parameter == "Mo" ~ "Molybdenum", parameter == "Na" ~ "Sodium",
+    parameter == "Ni" ~ "Nickel", parameter == "P" ~ "Phosphorus", parameter == "Pb" ~ "Lead",
+    parameter == "S" ~ "Sulfur", parameter == "Sb" ~ "Antimony", parameter == "Se" ~ "Selenium",
+    parameter == "Si" ~ "Silica", parameter == "Ti" ~ "Titanium", parameter == "V" ~ "Vanadium", 
+    parameter == "Zn" ~ "Zinc",  
+    TRUE ~ "missing" ))
+  
+#i <- "Cd"
+plot_list = list()
+
+for(i in sort(unique(metals$parameter))) {
+  
+  i <- "Ag"
+  print(i)
+  
+  d <- metals %>% filter(parameter == i,
+                         sampletype == "groundwater")
+  # how to deal with varying quantile classes between metals? 
+  quant <- quantile(d$value, probs = seq(0, 1, by = 0.20)) 
+  # adjust decimal numbers based on value classes
+  quant[quant >= 10] <- round(quant[quant >= 10])
+  quant[quant < 10 & quant >= 1] <- round(quant[quant < 10 & quant >= 1], digits = 1)
+  quant[quant < 1 & quant >= 0.01] <- round(quant[quant < 1 & quant >= 0.01], digits = 2)
+  quant[quant < 0.01] <- round(quant[quant < 0.01], digits = 3)
+  
+  # create classes per element based on quantiles to be used in plot legend 
+  lab_list <- list()
+  for(j in 1:length(unique(quant))) {
+    if(j != length(unique(quant))) {
+      lab <- c(paste(unique(quant)[j], "-", unique(quant)[j+1]))
+      lab_list[[j]] = lab
+    }
+    # if only 1 class of <dl
+    if(n_distinct(quant) == 1){
+      lab <- "< 1"
+      lab_list[[j]] = lab
+    }
+  }
+  labs <- unlist(lab_list)
+  #print(labs)
+  
+  if(n_distinct(quant > 1)) {
+    
+    p <- ggplot() +
+    geom_sf(data = cur_geology, aes(fill = Field), alpha = 0.5) +
+    scale_fill_manual(name = "Geology", 
+                      values = c("yellowgreen", "purple4", "khaki2", "orange", "lightskyblue1")) +
+    new_scale_fill() +
+    geom_sf(data = d,
+            # asign classes to individual values using cut
+         # aes(fill = ifelse(unique(quant) > 1, 
+         #                   cut(value, breaks = c(unique(quantile(value, probs = seq(0, 1, by = 0.20)))),
+         #                   include.lowest = TRUE),
+         #                   1)),
+        aes(fill = cut(value, breaks = c(unique(quantile(value, probs = seq(0, 1, by = 0.20)))),
+                          include.lowest = TRUE)),
+         colour = "black",
+         pch = 21,
+         size = 2) +
+    scale_fill_brewer(type = "qual",
+                      palette = "RdGy",
+                      name = paste0(i, " [", unique(d$units), "]"),
+                      direction = -1,
+                      na.value = "black",
+                      labels = labs
+                      ) +
+    coord_sf(xlim = c(-69.15, -68.75),
+             ylim = c(12.0, 12.4)) +
+    #theme(legend.position = c(0.75, 0.8)) +
+    ggtitle(paste(unique(d$name), "concentrations in groundwater on Curacao")) + 
+    annotation_scale(location = "bl", width_hint = 0.5) +
+    annotation_north_arrow(location = "bl", which_north = "true",
+                           pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                           style = north_arrow_fancy_orienteering) +
+    theme(panel.grid.major = element_line(color = gray(.5), 
+                                          linetype = "dashed", 
+                                          size = 0.5), 
+          panel.background = element_rect(fill = "aliceblue"))
+  
+  } else {
+    p <- ggplot() +
+    geom_sf(data = cur_geology, aes(fill = Field), alpha = 0.5) +
+    scale_fill_manual(name = "Geology", 
+                      values = c("yellowgreen", "purple4", "khaki2", "orange", "lightskyblue1")) +
+    new_scale_fill() +
+    geom_sf(data = d,
+            # asign classes to individual values using cut
+        aes(fill = limit_symbol),
+         colour = "black",
+         pch = 21,
+         size = 2) +
+    scale_fill_brewer(type = "qual",
+                      palette = "RdGy",
+                      name = paste0(i, " [", unique(d$units), "]"),
+                      direction = -1,
+                      na.value = "black",
+                      labels = labs
+                      ) +
+    coord_sf(xlim = c(-69.15, -68.75),
+             ylim = c(12.0, 12.4)) +
+    #theme(legend.position = c(0.75, 0.8)) +
+    ggtitle(paste(unique(d$name), "concentrations in groundwater on Curacao")) + 
+    annotation_scale(location = "bl", width_hint = 0.5) +
+    annotation_north_arrow(location = "bl", which_north = "true",
+                           pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                           style = north_arrow_fancy_orienteering) +
+    theme(panel.grid.major = element_line(color = gray(.5), 
+                                          linetype = "dashed", 
+                                          size = 0.5), 
+          panel.background = element_rect(fill = "aliceblue"))
+    
+  }
+  
+  ggsave(p, file = paste0(output, "Output/Figures/Maps/Metals2/", i, "_groundwater",  ".pdf"), 
+         width = 210, height = 297, units = "mm")
+  plot_list[[i]] = p
+
+}
+# merging PDF's
+setwd(paste0(output, "Output/Figures/Maps/Metals2/"))
+file_list <- list.files()
+
+qpdf::pdf_combine(input = unlist(file_list),
+                  output = paste0(output, "Output/Figures/Maps/Metals2/1.Metals_groundwater.pdf"))
+
+# Another option: create pdf where each page is a separate plot.
+# pdf(paste0(output, "Output/Figures/Maps/Metals/1.Metals_groundwater.pdf"))
+# for (i in 1:length(plot_list)) {
+#     print(plot_list[[i]])
+# }
+# dev.off() 
+
+```
+
+
+
+```{r}
+# Radon map
+
+ggplot() +
+  geom_sf(data = cur_geology, aes(fill = Field), alpha = 0.5) +
+  scale_fill_manual(name = "Geology", 
+                    values = c("yellowgreen", "purple4", "khaki2", "orange", "lightskyblue1")) +
+  new_scale_fill() +
+  geom_sf(data = pts %>% filter(parameter == "Rn",
+                             sampletype == "groundwater"),
+       aes(fill = cut(value, breaks = c(0, 1, 2, 5, 10, 50))),
+       colour = "black",
+       pch = 21,
+       size = 2) +
+  scale_fill_brewer(type = "qual",
+                    palette = "RdGy",
+                    name = "Rn [Bq/l]",
+                    direction = -1,
+                    na.value = "black",
+                    labels = c("0 - 1",
+                               "1 - 2",
+                               "2 - 5",
+                               "5 - 10",
+                               ">10")) +
+  coord_sf(xlim = c(-69.15, -68.75),
+           ylim = c(12.0, 12.4)) +
+  #theme(legend.position = c(0.75, 0.8)) +
+  ggtitle("Radon concentrations in groundwater on Curacao") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+
+
+```

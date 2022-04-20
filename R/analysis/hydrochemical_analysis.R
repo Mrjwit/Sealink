@@ -19,10 +19,14 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, openxlsx, ggmap, 
-               sf, leaflet, data.table, cowplot, data.table,
-               scales, corrplot, Hmisc, ggpubr,
-               ggbiplot)
+pacman::p_load(tidyverse, openxlsx, ggmap, devtools,
+               sf, cowplot, scales, corrplot, Hmisc, ggpubr,
+               ggbiplot, ggcorrplot)
+
+install_github("vqv/ggbiplot")
+library(plyr)
+library(dplyr)
+library(ggbiplot)
 
 ###############################################################################
 # load data
@@ -94,10 +98,11 @@ toPercent <- function (d) {
   return(d)
 }
 
-dat <- toPercent(d)
+dat <- toPercent(d) %>%
+  select(samplecode, sampletype, Cl, SO4, HCO3, Na, K, Ca, Mg)
 
 # takes percentage data and converts them to xy coordinates for plotting
-transform_piper_data <- function(Mg, Ca, Cl, SO4, name=samplecode, watertype=watertype){
+transform_piper_data <- function(Mg, Ca, Cl, SO4, name=samplecode, sampletype=sampletype){
   if(is.null(name)){
     name = rep(1:length(Mg),3)
   } else {
@@ -117,10 +122,10 @@ transform_piper_data <- function(Mg, Ca, Cl, SO4, name=samplecode, watertype=wat
   }
   np_list <- lapply(1:length(x1), function(i) new_point(x1[i], x2[i], y1[i], y2[i]))
   npoints <- do.call("rbind",np_list)
-  data.frame(observation=name,x=c(x1, x2, npoints$x), y=c(y=y1, y2, npoints$y), watertype = watertype)
+  data.frame(observation=name,x=c(x1, x2, npoints$x), y=c(y=y1, y2, npoints$y), sampletype = sampletype)
 }
 
-piper.data <- transform_piper_data(dat$Mg, dat$Ca, dat$Cl, dat$SO4, dat$samplecode, dat$watertype)
+piper.data <- transform_piper_data(dat$Mg, dat$Ca, dat$Cl, dat$SO4, dat$samplecode, dat$sampletype)
 piper.data <- piper.data %>%
   mutate(date = 2021)
 
@@ -184,8 +189,8 @@ ggplot_piper <- function(piper.data,output = c("ggplot","plotly")) {
                    axis.title.x = ggplot2::element_blank(), axis.title.y = ggplot2::element_blank(),
                    legend.title = element_blank()) +
     ggplot2::geom_point(data=piper.data, 
-                        ggplot2::aes(x,y, colour=factor(watertype),
-                                     shape = watertype, 
+                        ggplot2::aes(x,y, colour=factor(sampletype),
+                                     shape = sampletype, 
                                      text = paste(observation,
                                                   '</br></br>Date: ',
                                                   date))) + 
@@ -409,32 +414,66 @@ d <- data %>%
               values_from = value)
 
 corr <- cor(d[,-1], use = "complete.obs", method = "kendall")  
-corrplot(corr, method = "circle", type = "lower", #order = "hclust", 
+corrplot(corr, method = "circle", type = "lower", order = "hclust", 
          p.mat = p_mat, sig.level = 0.05, insig = "blank")
 
 #### PCA ####
+# example
+data(wine)
+wine.pca <- prcomp(wine, scale. = TRUE)
+ggbiplot(wine.pca, obs.scale = 1, var.scale = 1,
+         groups = wine.class, ellipse = TRUE) +
+  scale_color_discrete(name = "") +
+  theme(legend.direction = "horizontal", legend.position = "top")
+
+# for metals in groundwater only
 d <- data %>%
   filter(year == 2021,
+         #sampletype == "groundwater",
          !is.na(value),
          method == "ICP-MS") %>%
   # remove Ag and Cd since all values are <dl
   filter(!parameter %in% c("Ag", "Cd")) %>%
-  select(samplecode, parameter, value) %>%
+  select(samplecode, sampletype, subtype, parameter, value) %>%
   pivot_wider(names_from = parameter,
-              values_from = value)
+              values_from = value) %>%
+  na.omit() # this excludes some samples that have NA for certain elements
 
-g <- ggbiplot(d,
-              obs.scale = 1,
-              var.scale = 1,
-              groups = training$Species,
-              ellipse = TRUE,
-              circle = TRUE,
-              ellipse.prob = 0.68)
-g <- g + scale_color_discrete(name = '')
-g <- g + theme(legend.direction = 'horizontal',
-               legend.position = 'top')
-print(g)
- 
+## standardize concentrations through log transformation and z-scores in order to 
+## eliminate influence of different units between variables and acquire a normal/log-normal distribution
+
+d.class <- dplyr::pull(d, subtype)
+d.pca <- prcomp(d %>% select(-samplecode, -sampletype, -subtype), scale. = TRUE)
+ggbiplot(d.pca,
+         obs.scale = 1, var.scale = 1,
+         groups = d.class) +
+  scale_color_discrete(name = "") +
+  theme_bw() +
+  theme(legend.direction = "horizontal", legend.position = "bottom")
+
+## for all parameters
+d <- data %>%
+  filter(year == 2021,
+         sampletype == "groundwater",
+         method != "IA",
+         !is.na(value)) %>%
+  # remove Ag and Cd since all values are <dl
+  filter(!parameter %in% c("Ag", "Cd", "Temp", "HCO3_lab", "HCO3_field",
+                           "NO3_field", "NO2_field", "DO_sat", "S", "P")) %>%
+  select(samplecode, sampletype, subtype, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) 
+
+d.class <- dplyr::pull(d, subtype)
+d.pca <- prcomp(d %>% select(-samplecode, -sampletype, -subtype), scale. = TRUE)
+ggbiplot(d.pca,
+         obs.scale = 1, var.scale = 1,
+         groups = d.class) +
+  scale_color_discrete(name = "") +
+  theme_bw() +
+  theme(legend.direction = "horizontal", legend.position = "bottom")
+
+
 
 #### Plots ####
 

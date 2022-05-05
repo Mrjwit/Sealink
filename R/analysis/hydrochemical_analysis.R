@@ -21,7 +21,7 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, openxlsx, ggmap, devtools,
                sf, cowplot, scales, corrplot, Hmisc, ggpubr,
-               ggbiplot, ggcorrplot)
+               ggbiplot, ggcorrplot, psych, FactoMineR)
 
 install_github("vqv/ggbiplot")
 library(plyr)
@@ -426,10 +426,89 @@ ggbiplot(wine.pca, obs.scale = 1, var.scale = 1,
   scale_color_discrete(name = "") +
   theme(legend.direction = "horizontal", legend.position = "top")
 
-# for metals in groundwater only
+## first use a subselection to test
 d <- data %>%
   filter(year == 2021,
          #sampletype == "groundwater",
+         method != "IA",
+         !is.na(value),
+         !units %in% c("mg N/L", "mg P/L"),
+         samplecode != "SP001B") %>%
+  # remove PO4 with IC measurements
+  mutate(remove = ifelse(method == "IC" & parameter == "PO4", 1, 0)) %>%
+  filter(remove == 0) %>%
+  # remove Ag and Cd since all values are <dl and double parameters
+  filter(parameter %in% c("pH", "HCO3", "Cl", "SO4", "NO3", "PO4", 
+                          "Ca", "Na", "Mg", "K", "Fe", "Mn", "NH4", 
+                          "B", "Si", "V", "Zn", "Ni")) %>%
+  select(samplecode, sampletype, subtype, parameter, value) %>%
+  # normalize/standardize concentrations using z-score, this can also be done automatically within prcomp using scale = T
+  #group_by(parameter) %>%
+  #mutate(zscore = (value - mean(value)) / sd(value)) %>%
+  #mutate(scaled = value - mean(value)) %>%
+  #mutate(logval = log(value + 1)) %>%
+  #ungroup() %>%
+  # either use concentrations or zcore. Remove the other
+  #select(-scaled) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  na.omit()
+
+d_long <- d %>% pivot_longer(cols = B:Zn, names_to = "parameter", values_to = "conc")
+
+# check standardized concentrations
+ggplot(d_long, aes(x = parameter, y = conc)) +
+  geom_boxplot() +
+  theme_bw() 
+  #facet_wrap(~parameter, scales = "free")
+
+
+# first make correlation matrix
+corr <- cor(d[,-c(1:3)], use = "complete.obs", method = "kendall")
+p_mat <- cor_pmat(d[,-c(1:3)])
+corrplot(corr, method = "number", order = "hclust", type = "lower",
+         p.mat = p_mat, sig.level = 0.05, insig = "blank")
+
+#d.pca <- prcomp(d %>% select(-samplecode, -sampletype, -subtype), scale. = TRUE)
+d.pca <- princomp(d %>% select(-samplecode, -sampletype, -subtype), cor = T)
+d.pca <- PCA(d %>% select(-samplecode, -sampletype, -subtype))
+
+# get overview of sd and variance explained per principal component
+summary(d.pca)
+
+screeplot(d.pca)
+# make own screeplot
+varExp = (100*d.pca$sdev^2/sum(d.pca$sdev^2))
+varDF = data.frame(Dimensions=1:length(varExp),
+                   varExp = varExp,
+                   varCum = cumsum(varExp))
+ggplot(varDF, aes(x=Dimensions, y = varExp)) +
+  geom_point() +
+  geom_col(fill = "steelblue") +
+  geom_line() +
+  theme_bw() +
+  scale_x_continuous(breaks = 1:nrow(varDF)) +
+  ylab("% variance explained")
+
+
+# get the loadings/coefficient per PC for all parameters
+# or the contribution of the variables to the nth PC
+round(unclass(d.pca$loadings[, 1:6]), digits = 2)
+#round(unclass(d.pca$rotation[, 1:6]), digits = 2) 
+
+ggbiplot(d.pca,
+         obs.scale = 1, var.scale = 1
+         #groups = d.class
+) +
+  scale_color_discrete(name = "") +
+  theme_bw() +
+  theme(legend.direction = "horizontal", legend.position = "bottom")
+
+
+# for metals in groundwater only
+d <- data %>%
+  filter(year == 2021,
+         sampletype == "groundwater",
          !is.na(value),
          method == "ICP-MS") %>%
   # remove Ag and Cd since all values are <dl
@@ -454,28 +533,153 @@ ggbiplot(d.pca,
 ## for all parameters
 d <- data %>%
   filter(year == 2021,
-         sampletype == "groundwater",
+         #sampletype == "groundwater",
          method != "IA",
-         !is.na(value)) %>%
-  # remove Ag and Cd since all values are <dl
+         !is.na(value),
+         !units %in% c("mg N/L", "mg P/L"),
+         samplecode != "SP001B") %>%
+  # remove PO4 with IC measurements
+  mutate(remove = ifelse(method == "IC" & parameter == "PO4", 1, 0)) %>%
+  filter(remove == 0) %>%
+  # remove Ag and Cd since all values are <dl and double parameters
   filter(!parameter %in% c("Ag", "Cd", "Temp", "HCO3_lab", "HCO3_field",
-                           "NO3_field", "NO2_field", "DO_sat", "S", "P")) %>%
+                           "NO3_field", "NO2_field", "DO_sat", "S", "P", "Rn")) %>%
   select(samplecode, sampletype, subtype, parameter, value) %>%
+  # normalize/standardize concentrations using z-score, this can also be done automatically within prcomp using scale = T
+  group_by(parameter) %>%
+  mutate(zscore = (value - mean(value)) / sd(value)) %>%
+  ungroup() %>%
+  # either use concentrations or zcore. Remove the other
+  select(-value) %>%
   pivot_wider(names_from = parameter,
-              values_from = value) 
+              values_from = zscore) %>%
+  na.omit()
 
 d.class <- dplyr::pull(d, subtype)
 d.pca <- prcomp(d %>% select(-samplecode, -sampletype, -subtype), scale. = TRUE)
+
+screeplot(d.pca)
+
 ggbiplot(d.pca,
          obs.scale = 1, var.scale = 1,
          groups = d.class) +
   scale_color_discrete(name = "") +
+  scale_x_continuous(limits = c(-3, 10)) +
+  scale_y_continuous(limits = c(-9, 5)) +
   theme_bw() +
   theme(legend.direction = "horizontal", legend.position = "bottom")
 
+# step by step
+# compute variance-covariance matrix (correlation matrix) and show eigenvalues
+
+d.pca <- princomp(d %>% select(-samplecode, -sampletype, -subtype), cor = T)
+
+summary(d.pca)
+
+d.pca$loadings %>% view()
+d.pca$scores %>% view()
+screeplot(d.pca)
+d.pca$sdev
+
+corr <- cor(d[,-c(1:3)], use = "complete.obs", method = "kendall")
+corrplot(corr, method = "number")
+
+KMO(d[,-c(1:3)])
 
 
-#### Plots ####
+### explanations
+
+## mean centering to focus shift from absolute concentrations
+# to fluctuations in the concentrations
+
+
+
+## scaling to remove effects of the variance (size of fluctuations)
+# all variables become equally important. This is optional
+
+
+
+## dimension reduction: remove correlated variables
+
+
+#### Biplots ####
+# use dataset of concentrations converted to meq/l
+an <- c("Cl", "HCO3", "NO3", "PO4", "SO4")
+cat <- c("Na", "Ca", "Mg", "Fe", "K", "NH4")
+
+d <- data %>%
+  filter(year == 2021, 
+         parameter %in% c(an, cat),
+         samplecode != "SP001B") %>%
+  # remove PO4 with IC measurements
+  mutate(remove = ifelse(method == "IC" & parameter == "PO4", 1, 0)) %>%
+  filter(remove == 0,
+         !units %in% c("mg N/L", "mg P/L")) %>%                    
+  # change mg/l to meq/l for anions
+  mutate(meql = case_when(
+    parameter == "Cl" ~ value / 35.453,
+    parameter == "HCO3" ~ value / 61.0168,
+    parameter == "NO3" & limit_symbol != "<" ~ value / 62.0049,
+    parameter == "NO2" ~ value / 46.0055,
+    parameter == "PO4" ~ value / 94.9714 * 3,
+    parameter == "SO4" ~ value / 96.06 * 2,
+    parameter == "Br" ~ value / 79.904,
+    parameter == "F" ~ value / 18.998403,
+    parameter == "EC_uS" ~ value,
+    TRUE ~ NA_real_ )) %>%
+  mutate(meql = case_when(
+    parameter == "Na" ~ value / 22.989769,
+    parameter == "Ca" ~ value / 40.078 * 2,
+    parameter == "Mg" ~ value / 24.305 * 2,
+    parameter == "Fe" ~ value / 55.845 * 2,
+    parameter == "Mn" ~ value / 54.938044 * 2 / 1000,
+    parameter == "K" ~ value / 39.0983,
+    parameter == "NH4" & limit_symbol != "<" ~ value / 18.04,
+    TRUE ~ meql )) %>%
+  select(samplecode, parameter, meql, sampletype) %>%
+  pivot_wider(names_from = parameter,
+              values_from = meql) %>%
+  filter(!is.na(Cl))
+
+# Ca vs HCO3
+# Role of carbonate/silicate minerals weathering
+ggplot(d, aes(x = Ca, y = HCO3)) + 
+  geom_point() +
+  geom_abline(linetype = "dashed", colour = "red") +
+  scale_x_continuous(name = "Ca (meq/l)") +
+  scale_y_continuous(name = "HCO3 (meq/l)") +
+  ggtitle("Ca vs HCO3") +
+  theme_bw()
+
+# Ca+Mg vs HCO3+SO4
+# influence of carbonate mineral dissolution (calcite/dolomite)
+ggplot(d, aes(x = Ca+Mg, y = HCO3+SO4)) + 
+  geom_point() +
+  geom_abline(linetype = "dashed", colour = "red") +
+  scale_x_continuous(name = "(Ca+Mg) (meq/l)") +
+  scale_y_continuous(name = "(HCO3+SO4) (meq/l)") +
+  ggtitle("(Ca+Mg) vs (HCO3+SO4)") +
+  theme_bw()
+
+# Ca vs SO4
+
+ggplot(d, aes(x = Ca, y = SO4)) + 
+  geom_point() +
+  geom_abline(linetype = "dashed", colour = "red") +
+  scale_x_continuous(name = "Ca (meq/l)") +
+  scale_y_continuous(name = "SO4 (meq/l)") +
+  ggtitle("Ca vs SO4") +
+  theme_bw()
+
+# Na vs Cl
+ggplot(d, aes(x = Na, y = Cl)) + 
+  geom_point() +
+  geom_abline(linetype = "dashed", colour = "red") +
+  scale_x_continuous(name = "Na (meq/l)") +
+  scale_y_continuous(name = "Cl (meq/l)") +
+  ggtitle("Na vs Cl") +
+  theme_bw()
+
 
 ## boxplots
 d <- data %>%

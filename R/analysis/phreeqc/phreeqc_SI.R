@@ -19,8 +19,8 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, openxlsx, ggmap, devtools,
-               sf, cowplot, scales, corrplot, ggpubr,
+pacman::p_load(tidyverse, openxlsx, devtools,
+               cowplot, scales, ggpubr,
                phreeqc)
 
 #install_github("vqv/ggbiplot")
@@ -134,7 +134,7 @@ d_SI <- SI2 %>%
                values_to = "SI") %>%
   # remove SI where one parameter is missing and values are -99
   filter(SI != -99.99000000) %>%
-  rename(samplecode = Description) %>%
+  dplyr::rename(samplecode = Description) %>%
   mutate(samplecode = gsub(" ", "", samplecode, fixed = T)) %>%
   mutate(mineral = gsub("SI_", "", mineral)) %>%
   mutate(formula = case_when(
@@ -162,13 +162,14 @@ d_SI <- SI2 %>%
     mineral == "Rhodochrosite" ~ "MnCO3",
     mineral == "Siderite" ~ "FeCO3",
     mineral == "SiO2.a." ~ "SiO2 (a)",
+    mineral == "Vivianite" ~ "Fe3(PO4)2:8H2O",
     mineral == "Witherite" ~ "BaCO3",
     TRUE ~ "missing" ))
 
 # Overview of SI statistics per mineral
 d_SI %>%
   group_by(mineral, formula) %>%
-  summarise(n = n(),
+  dplyr::summarise(n = n(),
             `% supersat` = round(length(samplecode[SI > 0]) / n() * 100, digits = 0),
             `% undersat` = 100 - `% supersat`,
             min = min(SI),
@@ -244,7 +245,7 @@ ggplot(d_SI %>% filter(mineral %in% set), aes(x = reorder(samplecode, -SI),
         legend.direction = "horizontal", legend.position = "bottom", legend.title = element_blank())
 
 # Phosphates
-set <- c("Fluorapatite", "Hydroxyapatite")
+set <- c("Fluorapatite", "Hydroxyapatite", "Vivianite")
 
 ggplot(d_SI %>% filter(mineral %in% set), aes(x = reorder(samplecode, -SI), 
                                               y = SI, color = mineral, shape = mineral,
@@ -311,6 +312,26 @@ ggplot(d_SI %>% filter(mineral %in% set), aes(x = samplecode, y = SI, color = mi
         legend.direction = "horizontal", legend.position = "bottom", legend.title = element_blank())
 
 # Mn minerals
+set <- c("Manganite", "Rhodochrosite")
+
+ggplot(d_SI %>% filter(mineral %in% set), aes(x = reorder(samplecode, -SI), 
+                                              y = SI, color = mineral, shape = mineral)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(name = "Saturation indices"
+                     #limits = c(-5, 1.0)
+  ) +
+  scale_x_discrete(name = "") +
+  annotate("text", x = 65, y = 1, label = "Saturated", size = 6) +
+  annotate("text", x = 15, y = -4.5, label = "Subsaturated", size = 6) +
+  theme_bw() +
+  ggtitle("Saturation indices for Mn-minerals") +
+  theme(axis.ticks.x = element_blank(),
+        #axis.text.x = element_blank(),
+        axis.text.x = element_text(angle = 90, size = 7),
+        legend.direction = "horizontal", legend.position = "bottom", legend.title = element_blank())
+
+# Calcite vs pCO2
 set <- c("Manganite", "Rhodochrosite")
 
 ggplot(d_SI %>% filter(mineral %in% set), aes(x = reorder(samplecode, -SI), 

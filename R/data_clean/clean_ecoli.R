@@ -48,7 +48,7 @@ d <- ecoli %>%
   mutate(parameter = "E.coli",
          units = "CFU/100 ml") %>%
   # rename columns
-  rename(samplecode = Sample.nr,
+  dplyr::rename(samplecode = Sample.nr,
          value = E..coli,
          notes = Notes) %>%
   # select only relevant columns
@@ -94,7 +94,7 @@ d <- d %>%
 # Check if every sample has only 1 value
 check <- d %>%
   group_by(samplecode) %>%
-  summarise(measurements = n_distinct(value)) %>%
+  dplyr::summarise(measurements = n_distinct(value)) %>%
   filter(measurements > 1)
 if(nrow(check) > 0) {
   stop("More than 1 value for E.coli in a sample")

@@ -293,7 +293,7 @@ ggplot(d_SI %>% filter(mineral %in% set), aes(x = reorder(samplecode, -SI),
 
 # Fe-, Mn-, Mg-, Al-hydroxides
 ## These mineral SI are strongly related to O2 levels and thus O2 measurements in the field
-# As the O2 measurements were mostly carried out in open wells, these are probabaly not accurate!
+# As the O2 measurements were mostly carried out in open wells, these are probably not accurate!
 set <- c("FeOOH.a.", "Fluorite", "Gibsite", "Goethite", "Manganite")
 
 ggplot(d_SI %>% filter(mineral %in% set), aes(x = samplecode, y = SI, color = mineral, shape = mineral)) +

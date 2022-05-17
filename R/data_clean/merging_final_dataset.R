@@ -78,10 +78,16 @@ d <- metadata %>%
                          "Ponsol sensors"),
          notes = "")
 
-# Merge all cleaned datasets but keep metadata separated for now
-data <- rbind(labdata, alk %>% filter(units == "mg/l"), ecoli, radon, d, isotopes %>% select(-std)) %>%
+# Merge all cleaned datasets but keep metadata separated for now, # Remove units mg N/L and mg P/L
+data <- rbind(labdata, 
+              alk %>% filter(units == "mg/l"), ecoli, radon, d, isotopes %>% select(-std)) %>%
   arrange(samplecode, parameter) %>%
-  mutate(watercode = substr(samplecode, start = 1, stop = 2))
+  mutate(watercode = substr(samplecode, start = 1, stop = 2)) %>%
+  # Remove units mg N/L and mg P/L, for PO4 only select DA analysis
+  mutate(flag = ifelse(parameter == "PO4" & method == "IC", 1, 0)) %>%
+  filter(!units %in% c("mg N/L", "mg P/L"),
+         flag == 0) %>%
+  select(-flag)
 
 # Add other relevant metadata
 d_meta <- metadata %>%
@@ -101,6 +107,8 @@ d_meta <- metadata %>%
 # RW001 -> use HCO3 lab
 # RW002 -> use HCO3 lab
 # SR003 -> use different HCO3 titration -> adjusted in alkalinity sheet
+
+## Convert Alkalinity as CaCO3 to HCO3??? ##
 
 data$parameter <- data$parameter %>%
   recode("HCO3" = "HCO3_field")

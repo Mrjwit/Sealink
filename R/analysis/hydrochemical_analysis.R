@@ -21,7 +21,7 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, openxlsx, ggmap, devtools,
                sf, cowplot, scales, corrplot, Hmisc, ggpubr,
-               ggbiplot, ggcorrplot, psych, FactoMineR)
+               ggbiplot, ggcorrplot, psych, FactoMineR, polynom)
 
 install_github("vqv/ggbiplot")
 library(plyr)
@@ -37,9 +37,27 @@ input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/"
 
 # load cleaned data
 data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
+metadata <- openxlsx::read.xlsx(paste0(input, "metadata_2021.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
+
+###############################################################################
+# Editing data
+###############################################################################
+
+# add geology and land use
+data <- data %>%
+  left_join(., metadata %>% select(samplecode, geology, geology_abr))
+
+# metadata %>% 
+#   group_by(Geology) %>%
+#   dplyr::summarise(n())
+# 
+# metadata %>%
+#   group_by(Land.use.based.on.own.observations, `Other.-.Land.use.based.on.own.observations`) %>%
+#   dplyr::summarise(n()) 
+
 
 ###############################################################################
 # Data analysis
@@ -53,7 +71,7 @@ cat <- c("Na", "Ca", "Mg", "Fe", "K", "NH4")
 
 d <- data %>%
   filter(year == 2021, 
-         parameter %in% c(an, cat)) %>%
+         parameter %in% c(an, cat, "EC_uS")) %>%
   filter(!str_detect(method, "PHOS"),
          units != "mg N/L") %>%                    
   # change mg/l to meq/l for anions
@@ -66,7 +84,7 @@ d <- data %>%
     parameter == "SO4" ~ value / 96.06 * 2,
     #parameter == "Br" ~ value / 79.904,
     #parameter == "F" ~ value / 18.998403,
-    #parameter == "EC_uS" ~ value,
+    parameter == "EC_uS" ~ value,
     TRUE ~ NA_real_ )) %>%
   mutate(meql = case_when(
     parameter == "Na" ~ value / 22.989769,
@@ -77,10 +95,10 @@ d <- data %>%
     parameter == "K" ~ value / 39.0983,
     parameter == "NH4" & limit_symbol != "<" ~ value / 18.04,
     TRUE ~ meql )) %>%
-  select(samplecode, parameter, meql, sampletype) %>%
+  select(samplecode, geology, parameter, meql, sampletype) %>%
   pivot_wider(names_from = parameter,
               values_from = meql) %>%
-  filter(!is.na(Cl))
+  filter(!is.na(Cl)) 
 
 # functions for piper diagram https://rstudio-pubs-static.s3.amazonaws.com/542159_ae160ba405044883a58ba3a53e4f7e6d.html
 # takes as input a dataframe with cation and anion concentrations in meql and converts them to percentages
@@ -99,10 +117,11 @@ toPercent <- function (d) {
 }
 
 dat <- toPercent(d) %>%
-  select(samplecode, sampletype, Cl, SO4, HCO3, Na, K, Ca, Mg)
+  select(samplecode, sampletype, geology, EC_uS, Cl, SO4, HCO3, Na, K, Ca, Mg)
 
 # takes percentage data and converts them to xy coordinates for plotting
-transform_piper_data <- function(Mg, Ca, Cl, SO4, name=samplecode, sampletype=sampletype){
+transform_piper_data <- function(Mg, Ca, Cl, SO4, name=samplecode, 
+                                 sampletype=sampletype, geology=geology, EC_uS=EC_uS){
   if(is.null(name)){
     name = rep(1:length(Mg),3)
   } else {
@@ -122,14 +141,15 @@ transform_piper_data <- function(Mg, Ca, Cl, SO4, name=samplecode, sampletype=sa
   }
   np_list <- lapply(1:length(x1), function(i) new_point(x1[i], x2[i], y1[i], y2[i]))
   npoints <- do.call("rbind",np_list)
-  data.frame(observation=name,x=c(x1, x2, npoints$x), y=c(y=y1, y2, npoints$y), sampletype = sampletype)
+  data.frame(observation=name,x=c(x1, x2, npoints$x), y=c(y=y1, y2, npoints$y), 
+             sampletype = sampletype, geology = geology, EC = EC_uS)
 }
 
-piper.data <- transform_piper_data(dat$Mg, dat$Ca, dat$Cl, dat$SO4, dat$samplecode, dat$sampletype)
+piper.data <- transform_piper_data(dat$Mg, dat$Ca, dat$Cl, dat$SO4, dat$samplecode, dat$sampletype, dat$geology, dat$EC_uS)
 piper.data <- piper.data %>%
   mutate(date = 2021)
 
-ggplot_piper <- function(piper.data,output = c("ggplot","plotly")) {
+ggplot_piper <- function(piper.data, output = c("ggplot","plotly"), scale = sampletype) {
   grid1p1 <<- data.frame(x1 = c(20,40,60,80), x2= c(10,20,30,40),y1 = c(0,0,0,0), y2 = c(17.3206,34.6412,51.9618, 69.2824))
   grid1p2 <<- data.frame(x1 = c(20,40,60,80), x2= c(60,70,80,90),y1 = c(0,0,0,0), y2 = c(69.2824, 51.9618,34.6412,17.3206))
   grid1p3 <<- data.frame(x1 = c(10,20,30,40), x2= c(90,80,70,60),y1 = c(17.3206,34.6412,51.9618, 69.2824), y2 = c(17.3206,34.6412,51.9618, 69.2824))
@@ -186,35 +206,72 @@ ggplot_piper <- function(piper.data,output = c("ggplot","plotly")) {
     ggplot2::theme(panel.grid.major = ggplot2::element_blank(), panel.grid.minor = ggplot2::element_blank(),
                    panel.border = ggplot2::element_blank(), axis.ticks = ggplot2::element_blank(),
                    axis.text.x = ggplot2::element_blank(), axis.text.y = ggplot2::element_blank(),
-                   axis.title.x = ggplot2::element_blank(), axis.title.y = ggplot2::element_blank(),
-                   legend.title = element_blank()) +
-    ggplot2::geom_point(data=piper.data, 
-                        ggplot2::aes(x,y, colour=factor(sampletype),
-                                     shape = sampletype, 
-                                     text = paste(observation,
-                                                  '</br></br>Date: ',
-                                                  date))) + 
-    # Adjust manual scale so the shape and colour are together in legend
-    # however, it is now no longer flexible and only works for 6 classes
-    scale_colour_manual(name = "water type",
-                        values = c("#F8766D", "#00BFC4", "#00BA38",
-                                   "#B79F00", "#619CFF", "#C77CFF")) +
-    scale_shape_manual(name = "water type",
-                       values = c(19, 17, 15, 3, 7, 8)) +
-    ggplot2::annotate(
-      geom = "text",
-      label = c("1", "2", "3", "4", "5", "5"),
+                   axis.title.x = ggplot2::element_blank(), axis.title.y = ggplot2::element_blank())
+    
+    ### Plot data
+    if(scale == "sampletype"){
+      p <- p + ggplot2::geom_point(data=piper.data, 
+                                   ggplot2::aes(x,y, colour=factor(sampletype),
+                                                shape = sampletype, 
+                                                text = paste(observation,
+                                                             '</br></br>Date: ',
+                                                             date))) + 
+        scale_colour_manual(name = "sample type",
+                            values = c("#F8766D", "#00BFC4", "#00BA38",
+                                       "#B79F00", "#619CFF", "#C77CFF")) +
+        scale_shape_manual(name = "sample type",
+                           values = c(19, 17, 15, 3, 7, 8))
+    }  
+  
+    if(scale == "geology"){
+      p <- p + ggplot2::geom_point(data=piper.data, 
+                                   ggplot2::aes(x,y, colour=factor(geology),
+                                                text = paste(observation,
+                                                             '</br></br>Date: ',
+                                                             date))) + 
+        scale_colour_manual(name = "geology",
+                            values = c("yellowgreen", "seagreen4", "lightskyblue2",
+                                       "purple4", "coral1", "yellow2", "grey50"))
+    }  
+    
+    if(scale == "EC") {
+      p <- p + ggplot2::geom_point(data=piper.data, 
+                                   #ggplot2::aes(x,y, size = EC, colour = cut(EC, breaks = c(0, 1000, 5000, 10000, 20000, 50000)),
+                                   ggplot2::aes(x,y, size = EC, colour = EC,
+                                                text = paste(observation,
+                                                             '</br></br>Date: ',
+                                                             date)),
+                                                alpha = 0.7) +
+        # scale_colour_continuous(breaks = c(1000, 5000, 10000, 20000, 50000),
+        #                         type = "viridis") +
+        scale_colour_distiller(name = "EC (uS/cm)",
+                               breaks = c(1000, 5000, 10000, 20000, 50000),
+                               palette = "Spectral",
+                               direction = -1) +
+        scale_size_continuous(name = "EC (uS/cm)",
+                              breaks = c(1000, 5000, 10000, 20000, 50000)) +
+        guides(color = guide_legend(), size = guide_legend())
+        # scale_size(name = "EC (uS/cm)",
+        #            breaks = c(1000, 5000, 10000, 20000, 50000))
+    }
+  
+    p <- p + ggplot2::annotate(
+    geom = "text",
+    label = c("1", "2", "3", "4", "5", "6"),
       x = c(70, 110, 150, 110, 110, 105),
       y = c(103.92, 175, 103.92, 32, 75, 138.5648)
     ) +
     ggplot2::geom_text(ggplot2::aes(
       #geom = "text",
-      x = 20,
-      y = c(150, 140, 130, 120, 110),
+      x = -10,
+      y = c(170, 160, 150, 140, 130, 120, 110),
       #label = "Alkalinity~as~HCO[3]^'-'"
       #label = "1 Ca-HCO[3]\n 2 Ca-Cl\n 3 Na-Cl\n 4 Na-HCO[3]\n 5 Mixed type"
-      label = c("1~Ca-`HCO`[3]", "2~Ca-`Cl`", "3~Na-`Cl`", "4~Na-`HCO`[3]", "5~Mixed~type")
-    ), parse=TRUE)
+      label = c("Water~type", "1~Ca-`HCO`[3]", "2~Ca-`Cl`", "3~Na-`Cl`", 
+                "4~Na-`HCO`[3]", "5~Mixed~Na-Ca-`HCO`[3]", "6~Mixed~Ca-Mg-`Cl`")
+    ), parse=TRUE,
+    hjust = 0) + 
+      theme(legend.position = c(0.9, 0.72))
   
   
   if (output == "ggplot"){
@@ -254,8 +311,19 @@ ggplot_piper <- function(piper.data,output = c("ggplot","plotly")) {
   return(p)
 }
 
-# Make piper diagram
-ggplot_piper(piper.data, output = "ggplot")
+# Make piper diagram with different versions using geology, EC and watertype
+ggplot_piper(piper.data, output = "ggplot", scale = "sampletype")
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_sampletype.png"))
+ggplot_piper(piper.data, output = "ggplot", scale = "geology")
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_geology.png"))
+ggplot_piper(piper.data, output = "ggplot", scale = "EC")
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_EC.png"))
+
+# just groundwater
+ggplot_piper(piper.data %>% filter(sampletype == "groundwater"), output = "ggplot", scale = "geology")
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_groundwater_per_geology.png"))
+ggplot_piper(piper.data %>% filter(sampletype == "groundwater"), output = "ggplot", scale = "EC")
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_groundwater_per_EC.png"))
 
 # different versions with geology/EC/etc?
 
@@ -360,6 +428,32 @@ d <- d %>%
 d %>% group_by(watertype) %>%
   summarise(n()) %>%
   view()
+
+
+#### Hierarchical Cluster Analysis #### 
+
+# Do it only for 2021
+data %>%
+  filter(year == 2021) %>%
+  filter(parameter == "Fe", sampletype == "groundwater") %>%
+  select(sampletype, parameter, value, units, limit_symbol) %>%
+  view()
+  summary()
+  ggplot(aes(y = value)) %>%
+  geom_boxplot()
+
+data %>%
+  filter(!parameter %in% c("clustermember", "c1", "c2", "c3", "c4", "Diepte", "RSC", "SAR")) %>%
+  filter(!parameter %in% c("HCO3_field", "HCO3_lab", "NO3_field", "NO2_field", "DO_sat")) %>%
+  group_by(year) %>%
+  summarise(n.param = n_distinct(parameter),
+            params = paste(sort(unique(parameter)), collapse = ", ")) %>%
+  view()
+
+d %>%
+  filter(parameter == "EC_uS", sampletype == "groundwater") %>%
+  ggplot(aes(y = value)) +
+  geom_boxplot()
 
 
 #### Correlation matrix ####
@@ -603,14 +697,16 @@ KMO(d[,-c(1:3)])
 
 
 #### Biplots ####
+## Plots in meq/l 
 # use dataset of concentrations converted to meq/l
 an <- c("Cl", "HCO3", "NO3", "PO4", "SO4")
 cat <- c("Na", "Ca", "Mg", "Fe", "K", "NH4")
 
-d <- data %>%
+d_meql <- data %>%
   filter(year == 2021, 
          parameter %in% c(an, cat),
-         samplecode != "SP001B") %>%
+         samplecode != "SP001B",
+         sampletype == "groundwater") %>%
   # remove PO4 with IC measurements
   mutate(remove = ifelse(method == "IC" & parameter == "PO4", 1, 0)) %>%
   filter(remove == 0,
@@ -619,7 +715,7 @@ d <- data %>%
   mutate(meql = case_when(
     parameter == "Cl" ~ value / 35.453,
     parameter == "HCO3" ~ value / 61.0168,
-    parameter == "NO3" & limit_symbol != "<" ~ value / 62.0049,
+    parameter == "NO3" ~ value / 62.0049, # parameter == "NO3" & limit_symbol != "<" ~ value / 62.0049, # dl NO3 = 0.03 mg/l = 0.0004838327 meq/l
     parameter == "NO2" ~ value / 46.0055,
     parameter == "PO4" ~ value / 94.9714 * 3,
     parameter == "SO4" ~ value / 96.06 * 2,
@@ -634,50 +730,137 @@ d <- data %>%
     parameter == "Fe" ~ value / 55.845 * 2,
     parameter == "Mn" ~ value / 54.938044 * 2 / 1000,
     parameter == "K" ~ value / 39.0983,
-    parameter == "NH4" & limit_symbol != "<" ~ value / 18.04,
+    parameter == "NH4" ~ value / 18.04, # parameter == "NH4" & limit_symbol != "<" ~ value / 18.04, # dl NH4 = 0.053 mg/l (NH41) or 0.258 m/gl (NH410) = 0.002937916 meq/l / 0.01430155 meq/l
     TRUE ~ meql )) %>%
   select(samplecode, parameter, meql, sampletype) %>%
   pivot_wider(names_from = parameter,
               values_from = meql) %>%
   filter(!is.na(Cl))
 
-# Ca vs HCO3
-# Role of carbonate/silicate minerals weathering
-ggplot(d, aes(x = Ca, y = HCO3)) + 
-  geom_point() +
-  geom_abline(linetype = "dashed", colour = "red") +
-  scale_x_continuous(name = "Ca (meq/l)") +
-  scale_y_continuous(name = "HCO3 (meq/l)") +
-  ggtitle("Ca vs HCO3") +
-  theme_bw()
+# Alkalis Na+K vs Ca+Mg
+
 
 # Ca+Mg vs HCO3+SO4
 # influence of carbonate mineral dissolution (calcite/dolomite)
-ggplot(d, aes(x = Ca+Mg, y = HCO3+SO4)) + 
+ggplot(d_meql, aes(x = Ca+Mg, y = HCO3+SO4)) + 
   geom_point() +
   geom_abline(linetype = "dashed", colour = "red") +
   scale_x_continuous(name = "(Ca+Mg) (meq/l)") +
   scale_y_continuous(name = "(HCO3+SO4) (meq/l)") +
+  annotate(geom = "text", x = 25, y = 40, label = "carbonate mineral dissolution", angle = 74, colour = "steelblue") + 
+  annotate(geom = "text", x = 100, y = 15, label = paste("extra source of Ca+Mg", "reverse ion exchange", sep = "\n") , angle = 0, colour = "red") + 
   ggtitle("(Ca+Mg) vs (HCO3+SO4)") +
   theme_bw()
 
-# Ca vs SO4
+# Ca vs HCO3
+# Role of carbonate/silicate minerals weathering
+ggplot(d_meql, aes(x = Ca, y = HCO3)) + 
+  geom_point() +
+  geom_abline(slope = 2, linetype = "dashed", colour = "red") +
+  #geom_abline(linetype = "dashed", colour = "red") +
+  scale_x_continuous(name = "Ca (meq/l)") +
+  scale_y_continuous(name = "HCO3 (meq/l)") +
+  annotate(geom = "text", x = 30, y = 38, label = "2:1 line", angle = 0, colour = "red") + 
+  annotate(geom = "text", x = 55, y = 8, label = "extra source of Ca", angle = 0, colour = "red") + 
+  ggtitle("Calcite dissolution") +
+  theme_bw()
 
-ggplot(d, aes(x = Ca, y = SO4)) + 
+# Ca+Mg vs HCO3
+# Role of dolomite dissolution
+
+
+# Ca vs SO4
+# influence of gypsum dissolution
+ggplot(d_meql, aes(x = Ca, y = SO4)) + 
   geom_point() +
   geom_abline(linetype = "dashed", colour = "red") +
   scale_x_continuous(name = "Ca (meq/l)") +
   scale_y_continuous(name = "SO4 (meq/l)") +
+  annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
+  annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
+  annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
   ggtitle("Ca vs SO4") +
   theme_bw()
 
 # Na vs Cl
-ggplot(d, aes(x = Na, y = Cl)) + 
+# Halite dissolution ? 
+ggplot(d_meql, aes(x = Na, y = Cl)) + 
   geom_point() +
   geom_abline(linetype = "dashed", colour = "red") +
+  # add seawater ratio mixing line
   scale_x_continuous(name = "Na (meq/l)") +
   scale_y_continuous(name = "Cl (meq/l)") +
   ggtitle("Na vs Cl") +
+  theme_bw() 
+
+# Add plots together using cowplot
+
+## plots of seawater mixing line!
+#
+
+
+## Biplots in concentrations (mg/l)
+
+# EC vs Cl
+d <- data %>%
+  filter(year == 2021, 
+         parameter %in% c("EC_uS", "Cl"),
+         samplecode != "SP001B") %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(values_from = value,
+              names_from = parameter)
+
+my_formula <- y ~ poly(x, 2, raw = T)
+df <- data.frame("x" = d$Cl, "y" = d$EC_uS)
+m <- lm(formula = my_formula, df)
+my_eq <- as.character(signif(as.polynomial(coef(m)), 2))
+label.text <- paste(gsub("x", "~italic(x)", my_eq, fixed = TRUE),
+                    paste("italic(R)^2",  
+                          format(summary(m)$r.squared, digits = 2), 
+                          sep = "~`=`~"),
+                    sep = "~~~~")
+
+# Plot of relationship between EC and Cl
+ggplot(df, aes(x = x, y = y)) +
+  geom_point(alpha = 0.2, shape = 21, fill = "blue", colour = "black", size = 2.5) +
+  geom_smooth(method = "lm", formula = my_formula, linetype = "dashed") +
+  # stat_cor(label.y = 50000, label.x = 3000, 
+  #          aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) + 
+  # stat_regline_equation(label.y = 47000, label.x = 3000) + # this is for linear model, not for exp! 
+  geom_vline(xintercept = 150, colour = "lightblue") + # fresh
+  geom_vline(xintercept = 1000, colour = "orange") + # brackish
+  geom_vline(xintercept = 3000, colour = "red1") + # saline ~ 15% seawater
+  geom_vline(xintercept = 21000, colour = "red4") + # hypersaline water
+  #geom_vline(xintercept = 10000, colour = "red") + # saline
+  scale_x_continuous(name = "Cl (mg/l)") +
+  scale_y_continuous(name = "EC (uS/cm)") +
+  annotate(geom = "text", x = 8000, y = 44000, label = label.text,
+           family = "serif", hjust = 0, parse = T, size = 4) +
+  annotate(geom = "text", x = -600, y = 56000, label = "fresh", angle = 90, colour = "lightblue") + 
+  annotate(geom = "text", x = 500, y = 55000, label = "fresh-brackish", angle = 90, colour = "palegreen3") + 
+  annotate(geom = "text", x = 2000, y = 56000, label = "brackish", angle = 90, colour = "orange") + 
+  annotate(geom = "text", x = 12000, y = 56000, label = "saline", angle = 0, colour = "red1") + 
+  annotate(geom = "text", x = 25000, y = 56000, label = "hypersaline", angle = 0, colour = "red4") + 
+  ggtitle("EC vs Cl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+# Ca vs HCO3
+d <- data %>%
+  filter(year == 2021, 
+         parameter %in% c("Ca", "HCO3"),
+         samplecode != "SP001B") %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(values_from = value,
+              names_from = parameter)
+
+ggplot(d, aes(x = Ca, y = HCO3)) + 
+  geom_point() +
+  geom_abline(linetype = "dashed", colour = "red") +
+  scale_x_continuous(name = "Ca (mg/l)") +
+  scale_y_continuous(name = "HCO3 (mg/l)") +
+  ggtitle("Ca vs HCO3") +
   theme_bw()
 
 
@@ -699,10 +882,42 @@ ggplot(d %>% filter(watercode == "GW"), aes(x = geology, y = value)) +
   
   
   
-  
-  
-  
-  
+#### Overzicht voor ICP-OES data  ####
+# 
+# 
+# ICP_elem <- data %>% filter(year == 2021,
+#                             method == "ICP-MS") %>%
+#             distinct(parameter)
+# 
+# # per sample
+# d <- data %>%
+#   filter(year == 2021, 
+#          parameter %in% c("EC_uS", "Cl", ICP_elem$parameter),
+#          samplecode != "SP001B") %>%
+#   select(samplecode, parameter, limit_symbol, value, detection_limit, units) %>%
+#   mutate(parameter = paste0(parameter, " (", units, ")"), 
+#          value = ifelse(limit_symbol == "<", paste(limit_symbol, value), value)) %>%
+#   select(samplecode, parameter, value) %>%
+#   pivot_wider(values_from = value,
+#               names_from = parameter) %>%
+#   select(samplecode, `EC_uS (uS/cm)`, `Cl (mg/l)`, everything())
+# write.xlsx(d, paste0(output, "ICP-MS_overzicht_per_sample.xlsx"))
+# 
+# # per element
+# d <- data %>%
+#   filter(year == 2021, 
+#          parameter %in% c("EC_uS", "Cl", ICP_elem$parameter),
+#          samplecode != "SP001B") %>%
+#   group_by(parameter, units) %>%
+#   dplyr::summarise(n = length(value[!is.na(value)]),
+#                    `% <RG` = round(length(value[limit_symbol == "<"]) / length(value[!is.na(value)]) * 100, digits = 0),
+#                    min = min(value, na.rm = T),
+#                    p10 = quantile(value, 0.1, na.rm = T),
+#                    med = median(value, na.rm = T),
+#                    avg = mean(value, na.rm = T),
+#                    p90 = quantile(value, 0.9, na.rm = T),
+#                    max = max(value, na.rm = T)) 
+# write.xlsx(d, paste0(output, "ICP-MS_overzicht_per_element.xlsx"))
   
 
 

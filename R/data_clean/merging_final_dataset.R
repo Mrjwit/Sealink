@@ -99,6 +99,31 @@ d_meta <- metadata %>%
          `House./.location.waste.water.collection`, `Well.distance.from.house.(m)`, `Note.on.sewage.(in.the.area)`, 
          Name.owner, Address, `Contact.mail/phone.number:`)
 
+# add 1 geology column and make distinction between east and west CLF
+d_meta <- d_meta %>%
+  mutate(geology = case_when(
+    `Geology.according.to.geological.map.(Beets)` == "Limestones" ~ "Limestones",
+    `Geology.according.to.geological.map.(Beets)` == "Limestones_and_Marls" ~ "Limestones",
+    `Geology.according.to.geological.map.(Beets)` == "Knip_group" ~ "Knip Group",
+    `Geology.according.to.geological.map.(Beets)` == "Midden_Curacao_formation" ~ "Curacao Midden Formation",
+    `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord >= -69.009065 ~ "Curacao Lava Formation East",
+    `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord < -69.009065 ~ "Curacao Lava Formation West",
+    `Other.-.Geology.according.to.geological.map.(Beets)` == "knip group, intrusives " ~ "Knip Group - intrusive",
+    TRUE ~ "Other" )) %>%
+  mutate(geology_abr = case_when(
+    `Geology.according.to.geological.map.(Beets)` == "Limestones" ~ "L",
+    `Geology.according.to.geological.map.(Beets)` == "Limestones_and_Marls" ~ "L",
+    `Geology.according.to.geological.map.(Beets)` == "Knip_group" ~ "K",
+    `Geology.according.to.geological.map.(Beets)` == "Midden_Curacao_formation" ~ "M",
+    `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord >= -69.009065 ~ "DO",
+    `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord < -69.009065 ~ "DW",
+    `Other.-.Geology.according.to.geological.map.(Beets)` == "knip group, intrusives " ~ "K - intrusive",
+    TRUE ~ "Other" ))
+
+# change classes of land use...
+
+
+
 ###############################################################################
 # Adjust HCO3 values
 ###############################################################################

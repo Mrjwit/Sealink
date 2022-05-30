@@ -56,7 +56,7 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 # put metadata of field measurements in long format so that in can be merged
 d <- metadata %>%
   select(samplecode, EC_uS, pH, Temp, DO, DO_sat, redox, NO3, NO2) %>%
-  rename(NO3_field = NO3,
+  dplyr::rename(NO3_field = NO3,
          NO2_field = NO2,
          Eh = redox) %>%
   pivot_longer(cols = EC_uS:NO2_field,

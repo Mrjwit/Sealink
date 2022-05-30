@@ -91,9 +91,13 @@ data <- rbind(labdata,
 
 # Add other relevant metadata
 d_meta <- metadata %>%
-  select(samplecode, Well.type, `Well.depth.below.surface.(m)`, `Depth.of.well.owner.(m)`,
-         `Groundwater.level.below.surface.(m)`, sample_depth, sample_method,
-         `Geology.according.to.geological.map.(Beets)`, Land.use.based.on.own.observations)
+  select(samplecode, Well.ID, xcoord, ycoord, date, time, Well.type, `Inner.well.diameter.(m)`, `Well.depth.below.surface.(m)`, 
+         `Depth.of.well.owner.(m)`, Note.on.well.identification, 
+         `Groundwater.level.below.surface.(m)`, sample_depth, sample_method, sample_notes, 
+         `Geology.according.to.geological.map.(Beets)`, `Other.-.Geology.according.to.geological.map.(Beets)`, 
+         Land.use.based.on.own.observations, `Other.-.Land.use.based.on.own.observations`,
+         `House./.location.waste.water.collection`, `Well.distance.from.house.(m)`, `Note.on.sewage.(in.the.area)`, 
+         Name.owner, Address, `Contact.mail/phone.number:`)
 
 ###############################################################################
 # Adjust HCO3 values
@@ -210,6 +214,6 @@ data <- rbind(data %>% mutate(year = 2021,
 openxlsx::write.xlsx(data, paste0(output, "Clean_data/hydrochemistry_curacao.xlsx"))
 
 # metadata file
-
+openxlsx::write.xlsx(d_meta, paste0(output, "Clean_data/metadata_2021.xlsx"))
 
 

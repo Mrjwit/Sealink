@@ -121,8 +121,47 @@ d_meta <- d_meta %>%
     TRUE ~ "Other" ))
 
 # change classes of land use...
+# importing GIS layers
+input_GIS <- "C:/Users/mikewit/Documents/SEALINK/GIS/SEALINK/"
+cur_zonalmap <- st_read(paste0(input_GIS,
+                               "Layers/Landuse/Curacao_EOP.shp")) %>%
+  st_transform(crs = 4326) %>%
+  mutate(landuse_zonal_map = case_when(
+    EOP == 1 ~ "Unknown, Klein Curacao",
+    EOP == 3 ~ "Urban areas",
+    EOP == 4 ~ "Old city", 
+    EOP == 5 ~ "Industry",
+    EOP == 6 ~ "Airport",
+    EOP == 7 ~ "Touristic areas",
+    EOP == 8 ~ "Agriculture",
+    EOP == 9 ~ "Conservation areas",
+    EOP == 10 ~ "Park areas",
+    EOP == 11 ~ "Rural areas", 
+    EOP == 12 ~ "Open land",
+    EOP == 13 ~ "Inland water", 
+    EOP == 14 ~ "Conservation water", 
+    EOP == 15 ~ "Inland island",
+    EOP == 309 ~ "Undefined land use 1",
+    EOP == 3012 ~ "Undefined land use 2",
+    TRUE ~ "other" ))
 
+pts <- st_as_sf(d_meta %>% 
+                  filter(!is.na(xcoord)) %>%
+                  select(samplecode, xcoord, ycoord), 
+                coords = c("xcoord", "ycoord"),
+                crs = 4326, agr = "constant") 
 
+# Intersect sample points with zonal map data
+# first check if polygon is valid, should return all true!
+#st_is_valid(cur_zonalmap)
+cur_zonalmap <- st_make_valid(cur_zonalmap)
+
+pts_lu <- st_intersection(pts, cur_zonalmap %>% select(landuse_zonal_map)) %>%
+  st_drop_geometry() 
+
+# add landuse type to metadata file
+d_meta <- d_meta %>%
+  left_join(., pts_lu)
 
 ###############################################################################
 # Adjust HCO3 values

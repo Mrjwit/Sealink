@@ -168,7 +168,7 @@ Conclusions from PO4 comparison:
 - PO4 concentration from ICP-MS is systematically higher than IC and DA concentrations. This is expected since P-tot is measured with ICP analysis. Noteworthy are 3 outliers with high concentrations (16, 21, 25 mg/l PO4) where low concentrations are observed with both the IC and DA. 
 - PO4 concentration from DA are systematically higher than IC measurements, but are systematically lower than ICP-MS analysis. There is one outlier at 20 mg/l while measurements of IC and ICP-MS are low. 
 - PO4 concentration from IC seem most consistent without outliers, but has lower concentrations than DA and ICP-MS. 
-- PO4 measurements between IC and ICP-MS show greatest resemblence. 
+- PO4 measurements between IC and ICP-MS show greatest resemblance. 
 
 It is therefore best to use PO4 concentrations measured by the IC. 
 
@@ -183,7 +183,8 @@ d <- data %>%
                             paste0(parameter, "_DA"), paste(parameter, method, sep = "_"))) %>%
   select(samplecode, parameter, value) %>%
   pivot_wider(names_from = parameter,
-              values_from = value)
+              values_from = value) %>%
+  rowwise() %>% mutate(avg = mean(c(PO4_DA, PO4_IC, `PO4_ICP-MS`), na.rm = T))
 
 # Plot PO4 from IC against DA
 ggplot(d, aes(x = PO4_DA, y = PO4_IC)) +
@@ -215,6 +216,21 @@ ggplot(d, aes(x = PO4_IC, y = `PO4_ICP-MS`)) +
                      name = "PO4 IC [mg/l]") +
   scale_y_continuous(limits = c(-0.2, 30),
                      name = "P/PO4 ICP-MS [mg/]") +
+  theme_bw()
+
+# arranged plot for 3 PO4 methods
+d_long <- d %>%
+  pivot_longer(cols = PO4_DA:`PO4_ICP-MS`,
+               names_to = "method",
+               values_to = "concentration")
+
+ggplot(d_long, aes(x = reorder(samplecode, -avg), y = concentration, color = method)) +
+  geom_point() +
+  geom_line(aes(x = reorder(samplecode, -avg), y = avg, group = 1), color = "black", linetype = "dashed") +
+  scale_x_discrete(name = "arranged samples",
+                   labels = NULL) +
+  scale_y_continuous(name = "PO4 [mg/l]") +
+  #scale_colour_manual(values = c("steelblue", "tomato")) +
   theme_bw()
 
 # ggplot(d, aes(x = samplecode, y = value, fill = method)) +

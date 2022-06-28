@@ -48,7 +48,8 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 
 # add geology and land use
 data <- data %>%
-  left_join(., metadata %>% select(samplecode, geology, geology_abr))
+  left_join(., metadata %>% select(samplecode, geology, geology_abr, 
+                                   landuse_zonal_map, Land.use.based.on.own.observations))
 
 # metadata %>% 
 #   group_by(Geology) %>%
@@ -58,10 +59,177 @@ data <- data %>%
 #   group_by(Land.use.based.on.own.observations, `Other.-.Land.use.based.on.own.observations`) %>%
 #   dplyr::summarise(n()) 
 
+data %>%
+  filter(year == 2021, 
+         sampletype == "groundwater",
+         samplecode != "SP001B") %>%
+  select(samplecode, landuse_zonal_map) %>%
+  group_by(landuse_zonal_map) %>%
+  summarise(n = n_distinct(samplecode),
+            `%` = round(n / 79 * 100, digits = 0)) %>%
+  rbind(., c("Total", colSums(.[,2:3])))
+
+# export for GIS
+d <- data %>%
+  filter(year == 2021,
+         !samplecode %in% c("AIR001", "SP001B")) %>%
+  select(samplecode, parameter, value, sampletype, subtype) %>%
+  # change NA to zero
+  mutate_if(is.numeric, funs(ifelse(is.na(.), 0, .))) %>%
+  # add xy data from metadata
+  left_join(., metadata %>% select(samplecode, xcoord, ycoord)) %>%
+  # wide format for parameters
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+# save watertypes for GIS viewing
+write.csv(d, paste0("C:/Users/mikewit/Documents/SEALINK/", "GIS/SEALINK/Data/Wells/hydrochemistry_2021.csv"))
+
+###############################################################################
+# Data overview
+###############################################################################
+
+## groundwater samples per geology / land use (zonal map)
+# geology
+# importing GIS layers
+input_GIS <- "C:/Users/mikewit/Documents/SEALINK/GIS/SEALINK/"
+cur_geology <- st_read(paste0(input_GIS,
+                              "Layers/Geology/Geology Shapefile EATH.shp")) %>%
+  st_transform(crs = 4326)
+# add areas
+
+# convert to dataframe and add percentages
+
+# add ... samples
+
+
+# land use
+# importing GIS layers
+cur_zonalmap <- st_read(paste0(input_GIS,
+                               "Layers/Landuse/Curacao_EOP.shp")) %>%
+  st_transform(crs = 4326) %>%
+  mutate(landuse_zonal_map = case_when(
+    EOP == 1 ~ "Unknown, Klein Curacao",
+    EOP == 3 ~ "Urban areas",
+    EOP == 4 ~ "Old city", 
+    EOP == 5 ~ "Industry",
+    EOP == 6 ~ "Airport",
+    EOP == 7 ~ "Touristic areas",
+    EOP == 8 ~ "Agriculture",
+    EOP == 9 ~ "Conservation areas",
+    EOP == 10 ~ "Park areas",
+    EOP == 11 ~ "Rural areas", 
+    EOP == 12 ~ "Open land",
+    EOP == 13 ~ "Inland water", 
+    EOP == 14 ~ "Conservation water", 
+    EOP == 15 ~ "Inland island",
+    EOP == 309 ~ "Undefined land use 1",
+    EOP == 3012 ~ "Undefined land use 2",
+    TRUE ~ "other" ))
+d_zonalmap <- st_drop_geometry(cur_zonalmap)
+
+d_zonalmap <- d_zonalmap %>%
+  mutate(area_km = area / 1000000) %>%
+  group_by(landuse_zonal_map) %>%
+  summarise(tot_area_km2 = round(sum(area_km), digits = 2)) %>%
+  #rbind(., c("Total", colSums(.[,2]))) %>%
+  mutate(`area %` = round(as.numeric(tot_area_km2) / 440.804421*100, digits = 2))
+
+# add number of samples
+d_sample <- data %>%
+  filter(year == 2021,
+         sampletype == "groundwater",
+         samplecode != "SP001B") %>%
+  group_by(landuse_zonal_map) %>%
+  summarise(n_sample = n_distinct(samplecode),
+            `sample %` = round(n_sample / 79 * 100, digits = 1))
+
+d_zonalmap <- d_zonalmap %>%
+  left_join(., d_sample) %>%
+  pivot_longer(cols = c(`area %`, `sample %`),
+               names_to = "type",
+               values_to = "percentage")
+
+# plot 
+ggplot(d_zonalmap, 
+       aes(x = landuse_zonal_map, y = percentage, fill = type)) +
+  geom_col(position = "dodge") +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "relative contribution") +
+  theme_bw()
+
 
 ###############################################################################
 # Data analysis
 ###############################################################################
+
+#### WQ difference for multiple depths measurements at 7 locations ####
+d <- data %>%
+  filter(year == 2021,
+         samplecode %in% c("GW014A", "GW014B", "GW020A", "GW020B",
+                           "GW035A", "GW035B", "GW040A", "GW040B",
+                           "GW053A", "GW053B", "GW055A", "GW055B", 
+                           "GW060A", "GW060B")) %>%
+  mutate(putcode = substr(samplecode, 1, 5)) 
+# add metadata from well depth and sample depth
+d <- d %>%
+  left_join(., metadata %>% select(samplecode, Well.type, `Inner.well.diameter.(m)`, 
+                                   `Well.depth.below.surface.(m)`, `Depth.of.well.owner.(m)`,
+                                   `Groundwater.level.below.surface.(m)`, `sample_depth`,
+                                   `sample_method`, `sample_notes`)) %>%
+  group_by(samplecode) %>%
+  mutate(sampling = case_when(
+    samplecode == "GW014A" ~ "top",
+    samplecode == "GW014B" ~ "bottom",
+    samplecode == "GW020A" ~ "beginning pumping",
+    samplecode == "GW020B" ~ "end pumping",
+    samplecode == "GW035A" ~ "pumping",
+    samplecode == "GW035B" ~ "bailer", 
+    samplecode == "GW040A" ~ "top",
+    samplecode == "GW040B" ~ "bottom",
+    samplecode == "GW053A" ~ "top",
+    samplecode == "GW053B" ~ "bottom",
+    samplecode == "GW055A" ~ "top",
+    samplecode == "GW055B" ~ "bottom",
+    samplecode == "GW060A" ~ "bottom",
+    samplecode == "GW060B" ~ "top",
+    TRUE ~ "Other" )) %>%
+  ungroup()
+
+d %>% select(putcode, samplecode, Well.type, `Inner.well.diameter.(m)`, 
+             `Well.depth.below.surface.(m)`, `Depth.of.well.owner.(m)`,
+             `Groundwater.level.below.surface.(m)`, `sample_depth`,
+             `sample_method`, `sample_notes`) %>%
+  distinct() %>%
+  view()
+
+# differences in sampling depth per location - GW053 has large depth difference put no difference in EC?? 
+ggplot(d %>% filter(parameter == "EC_uS",
+                    !putcode %in% c("GW020", "GW035")), aes(x = putcode, y = value, fill = sampling)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(name = "EC (uS/cm)") +
+  theme_bw()
+
+# differences in sampling method per location GW035A+B
+ggplot(d %>% filter(parameter == "EC_uS",
+                    putcode %in% c("GW035")), aes(x = putcode, y = value, fill = sampling)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(name = "EC (uS/cm)") +
+  theme_bw()
+
+# differences during pumping session samplecodes GW020A+B
+ggplot(d %>% filter(parameter == "EC_uS",
+                    putcode %in% c("GW020")), aes(x = putcode, y = value, fill = sampling)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(name = "EC (uS/cm)") +
+  theme_bw()
+
+ggplot(d %>% filter(parameter %in% c("Cl", "Na", "NO3", "NH4", "Ca", "HCO3", "pH", "EC_uS"),
+                    putcode %in% c("GW053")), aes(x = putcode, y = value, fill = sampling)) +
+  geom_col(position = "dodge") +
+  #scale_y_continuous(name = "Cl (mg/L)") +
+  theme_bw() +
+  facet_wrap(facets = "parameter", scales = "free")
 
 #### Piper diagram ####
 
@@ -325,8 +493,6 @@ ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_groundwat
 ggplot_piper(piper.data %>% filter(sampletype == "groundwater"), output = "ggplot", scale = "EC")
 ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_groundwater_per_EC.png"))
 
-# different versions with geology/EC/etc?
-
 #### Stiff diagram ####
 an <- c("Cl", "HCO3", "NO3", "PO4", "SO4")
 cat <- c("Na", "Ca", "Mg", "Fe", "K", "NH4")
@@ -370,12 +536,132 @@ with(d, stiffPlot)
 
 
 #### Watertypes ####
+
+## make salinity classes based on chloride concentration (mg/l)
+d <- data %>%
+  filter(year == 2021,
+         samplecode != "SP001B",
+         parameter %in% c("Cl", "EC_uS")) %>%
+  select(samplecode, sampletype, subtype, geology, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  mutate(salinity_class = case_when(
+    Cl <= 150 ~ "fresh",
+    Cl > 150 & Cl <= 1000 ~ "fresh-brackish",
+    Cl > 1000 & Cl <= 3000 ~ "brackish",
+    Cl > 3000 & Cl <= 21000 ~ "saline",
+    Cl > 21000 ~ "hypersaline",
+    TRUE ~ "other" )) %>%
+  mutate(salinity_class = factor(salinity_class,
+                                 levels = c("fresh", "fresh-brackish", "brackish", "saline", "hypersaline", "Total")))
+# all samples
+d %>% 
+  group_by(salinity_class) %>%
+  summarise(n = n_distinct(samplecode),
+            `%` = round(n_distinct(samplecode)/96*100, digits = 0)) %>%
+  rbind(., c("Total", colSums(.[,2:3])))
+
+# only groundwater
+d %>% 
+  filter(sampletype == "groundwater") %>%
+  group_by(salinity_class) %>%
+  summarise(n = n_distinct(samplecode),
+            `%` = round(n_distinct(samplecode)/79*100, digits = 0),
+            `Cl range` = paste(min(Cl), max(Cl), sep = " - "),
+            `EC range` = paste(min(EC_uS), max(EC_uS), sep = " - "),
+            samples = paste(sort(unique(samplecode)), collapse = ", ")) %>%
+  rbind(., c("Total", colSums(.[,2:3])))
+
+## Hardness classes based on Ca+Mg in mmol/l
+d <- data %>%
+  filter(year == 2021,
+         samplecode != "SP001B",
+         parameter %in% c("Fe", "Na", "Ca", "Mg", "HCO3", "EC_uS", "pH")) %>%
+  # convert to meq/l
+  mutate(meql = case_when(
+    parameter == "HCO3" ~ value / 61.0168,
+    parameter == "Na" ~ value / 22.989769,
+    parameter == "Ca" ~ value / 40.078 * 2,
+    parameter == "Mg" ~ value / 24.305 * 2,
+    parameter == "Fe" ~ value / 55.845 * 2,
+    TRUE ~ value)) %>%
+  select(samplecode, sampletype, subtype, geology, geology_abr, parameter, meql) %>%
+  pivot_wider(names_from = parameter,
+              values_from = meql) %>%
+  mutate(total_hardness = Ca + Mg) %>%
+  mutate(hardness_CaCO3 = total_hardness / 2 * (40.078+60.0168)) %>%
+  mutate(hardness_Permanent = hardness_CaCO3 - (HCO3 * 50)) %>%
+  mutate(hardness_class = case_when(
+    total_hardness <= 1.2 ~ "soft",
+    total_hardness > 1.2 & total_hardness <= 2.4 ~ "moderately hard",
+    total_hardness > 2.4 & total_hardness <= 3.6 ~ "hard",
+    total_hardness > 3.6 ~ "very hard",
+    #total_hardness > 3.6 & total_hardness <= 4.8 ~ "very hard",
+    #total_hardness > 4.8 ~ "extremely hard",
+    TRUE ~ "other" )) %>%
+  mutate(hardness_class = factor(hardness_class,
+                                 levels = c("soft", "moderately hard", "hard", "very hard", "Total")))
+# all samples
+d %>% 
+  group_by(hardness_class) %>%
+  summarise(n = n_distinct(samplecode),
+            `%` = round(n_distinct(samplecode)/96*100, digits = 1)) %>%
+  rbind(., c("Total", colSums(.[,2:3])))
+
+# groundwater samples
+d %>% 
+  filter(sampletype == "groundwater") %>%
+  group_by(hardness_class) %>%
+  summarise(n = n_distinct(samplecode),
+            `%` = round(n_distinct(samplecode)/79*100, digits = 1)) %>%
+  rbind(., c("Total", colSums(.[,2:3])))
+
+# Plot
+ggplot(d %>% filter(sampletype == "groundwater") %>%
+         select(geology_abr, hardness_CaCO3, hardness_Permanent) %>%
+         pivot_longer(cols = hardness_CaCO3:hardness_Permanent,
+                      names_to = "hardness type",
+                      values_to = "hardness"),
+       aes(x = geology_abr, y = hardness, fill = `hardness type`))  +
+  geom_boxplot() +
+  scale_y_continuous(name = "total hardness as mg/L CaCO3") +
+  theme_bw()
+
+ggplot(d %>% filter(sampletype == "groundwater"),
+       aes(x = geology_abr, y = EC_uS))  +
+  geom_boxplot() +
+  scale_y_continuous(name = "Electrical Conductivity (uS/cm)") +
+  theme_bw()
+
+## Watertypes from piper diagram
+
+# dat is dataframe with percentage contribution of Na/Ca/Mg and HCO3/Cl/SO4
+d <- dat %>%
+  filter(sampletype == "groundwater") %>%
+  rowwise() %>%
+  mutate(an = names(.[5:7])[which.max(c_across(cols = Cl:HCO3))],
+         cat = names(.[8:11])[which.max(c_across(cols = Na:Mg))]) %>%
+  mutate(type = paste(cat, an, sep = "-"))
+
+d %>%
+  group_by(type) %>%
+  summarise(n=n()) %>%
+  rbind(., c("Total", colSums(.[,2])))
+
+# op basis van coordinaten uit piper.data
+
+d <- piper.data %>%
+  
+  mutate(type = case_when(
+))
+
+
 # convert concentrations to meq/l
 # Convert concentrations to meq/l and place in wide format
 an <- c("Cl", "HCO3", "NO3", "PO4", "SO4")
 cat <- c("Na", "Ca", "Mg", "Fe", "K", "NH4")
 
-d <- data %>%
+d_meql <- data %>%
   filter(year == 2021, 
          parameter %in% c("Cl", "SO4", "HCO3", 
                           "Na", "Ca", "K", "Mg")) %>%
@@ -406,9 +692,15 @@ d <- data %>%
   pivot_wider(names_from = parameter,
               values_from = meql) %>%
   filter(!is.na(Cl)) %>%
-  select(samplecode, sampletype, Cl, SO4, HCO3, Na, K, Ca, Mg)
-d <- toPercent(d)
+  select(samplecode, sampletype, Cl, SO4, HCO3, Na, K, Ca, Mg) %>%
+  # add Base Exchange Index (BEX)
+  mutate(BEX_calcite = Na + K + Mg - (1.0716 * Cl),
+         BEX_dolo = Na + K - (0.8768 * Cl)) %>%
+  mutate(fsea = Cl / 566)
 
+d <- toPercent(d_meql %>% select(-BEX_calcite, -BEX_dolo, -fsea))
+
+# watertype 1 based on semi-criteria piper plot
 d <- d %>%
   mutate(watertype = case_when(
     Ca + Mg > 50 & HCO3 > 50 ~ "Ca-HCO3",   # carbonate dissolution
@@ -417,18 +709,33 @@ d <- d %>%
     Na + K > 50 & HCO3 > 50 ~ "Na-HCO3",    # freshening groundwater with ion exchange of Ca for Na
   TRUE ~ "Mixed type" ))                    # mixing water
 
-  
-  
+# watertype 2 based on dominant anion/cation  
 d <- d %>%
   rowwise() %>%
-  mutate(an = names(.[3:5])[which.max(c_across(cols = Cl:HCO3))],
+  dplyr::mutate(an = names(.[3:5])[which.max(c_across(cols = Cl:HCO3))],
          cat = names(.[6:9])[which.max(c_across(cols = Na:Mg))]) %>%
-  mutate(type = paste(cat, an, sep = "-"))
+  mutate(type = paste(cat, an, sep = "-")) %>%
+  mutate(diff = ifelse(watertype == type, 0, 1))
 
-d %>% group_by(watertype) %>%
-  summarise(n()) %>%
+# watertype 3 based on 2 dominant anion/cations
+d <- d %>%
+  rowwise() %>%
+  dplyr::mutate(an = names(.[3:5])[which.max(c_across(cols = Cl:HCO3))],
+                cat = names(.[6:9])[which.max(c_across(cols = Na:Mg))]) %>%
+  mutate(dom_ion = paste(cat, an, sep = "-")) %>%
+  mutate(diff = ifelse(watertype == dom_ion, 0, 1))
+
+d %>% filter(sampletype == "groundwater") %>% 
+  group_by(type) %>%
+  dplyr::summarise(n()) %>%
   view()
 
+# add xy coordinates
+d <- d %>%
+  left_join(., metadata %>% select(samplecode, xcoord, ycoord))
+
+# save watertypes for GIS viewing
+write.csv(d, paste0("C:/Users/mikewit/Documents/SEALINK/", "GIS/SEALINK/Data/samples_watertypes.csv"))
 
 #### Hierarchical Cluster Analysis #### 
 
@@ -450,10 +757,6 @@ data %>%
             params = paste(sort(unique(parameter)), collapse = ", ")) %>%
   view()
 
-d %>%
-  filter(parameter == "EC_uS", sampletype == "groundwater") %>%
-  ggplot(aes(y = value)) +
-  geom_boxplot()
 
 
 #### Correlation matrix ####
@@ -738,7 +1041,15 @@ d_meql <- data %>%
   filter(!is.na(Cl))
 
 # Alkalis Na+K vs Ca+Mg
-
+ggplot(d_meql, aes(x = Na+K, y = Ca+Mg)) + 
+  geom_point() +
+  geom_abline(linetype = "dashed", colour = "red") +
+  scale_x_continuous(name = "(Na+K) (meq/l)") +
+  scale_y_continuous(name = "(Ca+Mg) (meq/l)") +
+  #annotate(geom = "text", x = 25, y = 40, label = "carbonate mineral dissolution", angle = 74, colour = "steelblue") + 
+  #annotate(geom = "text", x = 100, y = 15, label = paste("extra source of Ca+Mg", "reverse ion exchange", sep = "\n") , angle = 0, colour = "red") + 
+  ggtitle("(Na+K) vs (Ca+Mg)") +
+  theme_bw()
 
 # Ca+Mg vs HCO3+SO4
 # influence of carbonate mineral dissolution (calcite/dolomite)
@@ -767,7 +1078,15 @@ ggplot(d_meql, aes(x = Ca, y = HCO3)) +
 
 # Ca+Mg vs HCO3
 # Role of dolomite dissolution
-
+ggplot(d_meql, aes(x = Ca+Mg, y = HCO3)) + 
+  geom_point() +
+  geom_abline(linetype = "dashed", colour = "red") +
+  scale_x_continuous(name = "(Ca+Mg) (meq/l)") +
+  scale_y_continuous(name = "(HCO3) (meq/l)") +
+  annotate(geom = "text", x = 18, y = 25, label = "dolomite dissolution", angle = 79, colour = "steelblue") + 
+  annotate(geom = "text", x = 100, y = 15, label = paste("extra source of Ca+Mg", "reverse ion exchange", sep = "\n") , angle = 0, colour = "red") + 
+  ggtitle("(Ca+Mg) vs (HCO3)") +
+  theme_bw()
 
 # Ca vs SO4
 # influence of gypsum dissolution
@@ -777,8 +1096,8 @@ ggplot(d_meql, aes(x = Ca, y = SO4)) +
   scale_x_continuous(name = "Ca (meq/l)") +
   scale_y_continuous(name = "SO4 (meq/l)") +
   annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
-  annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
-  annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
+  #annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
+  #annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
   ggtitle("Ca vs SO4") +
   theme_bw()
 
@@ -879,7 +1198,93 @@ ggplot(d %>% filter(watercode == "GW"), aes(x = geology, y = value)) +
   geom_boxplot() +
   facet_wrap(facets = "parameter", scales = "free")
   
+#### Isotopes ####
+d <- data %>%
+  filter(method == "IA") %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  mutate(watertype = ifelse(substr(samplecode, start = 1, stop = 2) == "GW",
+                            "groundwater", "error"),
+         # deuterium excess d = 2H - 8 * 18O (Dansgaard, 1964)
+         d = `d2H` - 8 * `d18O`)
+
+
+ggplot(d, aes(x = `d18O`, y = `d2H`, fill = watertype)) +
+  geom_point() +
+  geom_abline(aes(slope = 8.02, intercept = 9.47, colour = "GMWL"),
+              linetype = "dashed", show.legend = TRUE) +
+  # geom_abline(aes(slope = , intercept = , colour = "LMWL"),
+  #             linetype = "dashed", show.legend = TRUE) +
+  scale_fill_manual(values = "black") +
+  scale_colour_manual(name = "", values = "red") +
+  scale_x_continuous(name = expression(paste(delta ^{18}, "O", "(\u2030)", " vs VSMOW"))) +
+  scale_y_continuous(name = expression(paste(delta ^{2}, "H", "(\u2030)", " vs VSMOW"))) +
+  coord_cartesian(xlim = c(-3.5, -0.5),
+                  ylim = c(-20, 5)) +
+  theme_bw()
+
+# deuterium excess (d)
+ggplot(d, aes(x = `d18O`, y = `d`, fill = watertype)) +
+  geom_point() +
+  geom_hline(yintercept = 10, linetype = "dashed", colour = "blue") +
+  # geom_abline(aes(slope = 8.02, intercept = 9.47, colour = "GMWL"),
+  #             linetype = "dashed", show.legend = TRUE) +
+  # geom_abline(aes(slope = , intercept = , colour = "LMWL"),
+  #             linetype = "dashed", show.legend = TRUE) +
+  scale_fill_manual(values = "black") +
+  scale_colour_manual(name = "", values = "red") +
+  scale_x_continuous(name = expression(paste(delta ^{18}, "O", "(\u2030)", " vs VSMOW"))) +
+  scale_y_continuous(name = expression(paste(delta ^{2}, "H", " -excess"))) +
+  # coord_cartesian(xlim = c(-3.5, -0.5),
+  #                 ylim = c(-20, 5)) +
+  theme_bw()  
+
+#### boxplots of sampletypes ####
+d <- data %>%
+  filter(year == 2021,
+         !samplecode %in% c("AIR001", "SP001B"))
+
+dat <- d %>%
+  filter(parameter %in% c("E.coli"))
+sample_size <- d %>%
+  group_by(sampletype) %>% 
+  dplyr::summarise(num = n_distinct(samplecode))
+dat <- dat %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = factor(paste0("n=", num)))
+
+ggplot(dat %>% mutate(myaxis = paste0(sampletype, "\n", myaxis)), aes(x = myaxis, y = value, fill = parameter)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[mg/L]") +
   
+  theme_bw()
+
+
+d <- data %>%
+  filter(year == 2021, !is.na(value))
+sample_size <- d %>%
+  filter(units == "ug/l") %>%
+  group_by(parameter) %>% 
+  summarise(num = n())
+d <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = factor(paste0("n=", num)))
+ggplot(d %>% filter(units == "ug/l") %>%
+         mutate(myaxis = paste0(parameter, "\n", num)), 
+       aes(x = myaxis, y = value)) +
+  stat_boxplot(geom = "errorbar", width = 0.4) +
+  geom_boxplot(fill = "lightgrey", width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[ug/L]", trans = 'log10',
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)),
+                     sec.axis = sec_axis(~.,
+                                         labels = trans_format("log10", math_format(10^.x)))) +
+  theme_bw() + 
+  annotation_logticks(sides = "lr")
+ggsave(paste0(output, "figures/boxplot_parameters_ugl.png"))
   
   
 #### Overzicht voor ICP-OES data  ####

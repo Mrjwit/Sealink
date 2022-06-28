@@ -57,7 +57,7 @@ d1 <- data %>%
             dl = paste(unique(detection_limit), collapse = ", "),
             method = paste(unique(method), collapse = ", ")) 
 
-xlsx::write.xlsx(d1, file = paste0(output, "statistics_all_parameters.xlsx"), sheetName = "TOTAL")
+#xlsx::write.xlsx(d1, file = paste0(output, "statistics_all_parameters.xlsx"), sheetName = "TOTAL")
 
 d2 <- data %>%
   filter(year == 2021,
@@ -76,7 +76,7 @@ d2 <- data %>%
             dl = paste(unique(detection_limit), collapse = ", "),
             method = paste(unique(method), collapse = ", ")) 
 
-xlsx::write.xlsx(d2, file = paste0(output, "statistics_all_parameters.xlsx"), sheetName = "> dl", append = T)
+#xlsx::write.xlsx(d2, file = paste0(output, "statistics_all_parameters.xlsx"), sheetName = "> dl", append = T)
 
 #### Boxplots ####
 
@@ -117,7 +117,7 @@ sample_size <- d %>%
   filter(units == "mg/l",
          !parameter %in% c("HCO3_field", "HCO3_lab", "NO2_field", "NO3_field")) %>%
   group_by(parameter) %>% 
-  summarise(num = n())
+  dplyr::summarise(num = n())
 d <- d %>%
   left_join(sample_size) %>%
   mutate(myaxis = factor(paste0("n=", num)))
@@ -140,11 +140,12 @@ ggsave(paste0(output, "figures/boxplot_parameters_mgl.png"))
 
 # parameters in ug/l
 d <- data %>%
-  filter(year == 2021, !is.na(value))
+  filter(year == 2021, !is.na(value),
+         sampletype == "groundwater")
 sample_size <- d %>%
   filter(units == "ug/l") %>%
   group_by(parameter) %>% 
-  summarise(num = n())
+  dplyr::summarise(num = n())
 d <- d %>%
   left_join(sample_size) %>%
   mutate(myaxis = factor(paste0("n=", num)))
@@ -161,7 +162,68 @@ ggplot(d %>% filter(units == "ug/l") %>%
                                         labels = trans_format("log10", math_format(10^.x)))) +
   theme_bw() + 
   annotation_logticks(sides = "lr")
-ggsave(paste0(output, "figures/boxplot_parameters_ugl.png"))
+ggsave(paste0(output, "figures/groundwater_boxplot_parameters_ugl.png"))
+
+# parameters in ug/l
+# metals excluding Ag and Cd as they are all <dl
+metals <- c("Al", "As", "B", "Ba", "Be", "Ca", "Co", "Cr", "Cu", "Fe", "K", "Li", 
+            "Mg", "Mn", "Mo", "Na", "Ni", "Pb", "Sb", "Se", "Si", "Ti", "V", "Zn")
+
+d <- data %>%
+  filter(year == 2021, !is.na(value),
+         sampletype == "groundwater",
+         # select only metals
+         parameter %in% metals) %>%
+  mutate(value = ifelse(units == "mg/l", value * 1000, value))
+  
+sample_size <- d %>%
+  filter(parameter %in% metals) %>%
+  group_by(parameter) %>% 
+  dplyr::summarise(num = n())
+d <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = factor(paste0("n=", num)))
+ggplot(d %>% mutate(myaxis = paste0(parameter, "\n", num)), 
+       aes(x = myaxis, y = value)) +
+  stat_boxplot(geom = "errorbar", width = 0.4) +
+  geom_boxplot(fill = "lightgrey", width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[ug/L]", trans = 'log10',
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)),
+                     sec.axis = sec_axis(~.,
+                                         labels = trans_format("log10", math_format(10^.x)))) +
+  theme_bw() + 
+  annotation_logticks(sides = "lr")
+#ggsave(paste0(output, "figures/groundwater_boxplot_metals_ugl.png"))
+
+d <- data %>%
+  filter(year == 2021, !is.na(value),
+         sampletype %in% c("groundwater", "surfacewater", "wastewater"),
+         # select only metals
+         parameter %in% metals) %>%
+  mutate(value = ifelse(units == "mg/l", value * 1000, value))
+
+sample_size <- d %>%
+  filter(parameter %in% metals) %>%
+  group_by(parameter) %>% 
+  dplyr::summarise(num = n())
+d <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = factor(paste0("n=", num)))
+ggplot(d %>% mutate(myaxis = paste0(parameter, "\n", num)), 
+       aes(x = myaxis, y = value, fill = sampletype)) +
+  #stat_boxplot(geom = "errorbar", width = 0.4) +
+  geom_boxplot(width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[ug/L]", trans = 'log10',
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)),
+                     sec.axis = sec_axis(~.,
+                                         labels = trans_format("log10", math_format(10^.x)))) +
+  theme_bw() + 
+  annotation_logticks(sides = "lr")
+ggsave(paste0(output, "figures/groundwater_wastewater_boxplot_metals_ugl.png"))
 
 calc_boxplot_stat <- function(x) {
   coef <- 1.5

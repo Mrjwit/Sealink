@@ -144,6 +144,15 @@ cur_zonalmap <- st_read(paste0(input_GIS,
     EOP == 309 ~ "Undefined land use 1",
     EOP == 3012 ~ "Undefined land use 2",
     TRUE ~ "other" ))
+d_zonalmap <- st_drop_geometry(cur_zonalmap)
+
+d_zonalmap %>%
+  mutate(area_km = area / 1000000) %>%
+  group_by(landuse_zonal_map) %>%
+  summarise(tot_area_km2 = round(sum(area_km), digits = 2)) %>%
+  rbind(., c("Total", colSums(.[,2]))) %>%
+  mutate(`area %` = round(as.numeric(tot_area_km2) / 440.804421*100, digits = 2))
+  
 
 pts <- st_as_sf(d_meta %>% 
                   filter(!is.na(xcoord)) %>%
@@ -248,27 +257,65 @@ data <- data %>%
 # add other hydrochemistry datasets
 ###############################################################################
 
+cat92 <- c("Fe", "Mg", "Si", "Na", "Al", "Ca", "K", "PO4", "Mn", "Ti", "Pb", 
+           "Cd", "Co", "V", "Zn", "Cu", "Ni", "Cr")
+an92 <- c("Cl", "SO4", "Br", "NO3", "NO2")
+
 ## data 1977 and 1992
 # put in right format
 d <- data1977_1992 %>%
-  mutate(samplecode = putcode,
+  mutate(parameter = ifelse(parameter == "d18O", "δ18O",
+                            ifelse(parameter == "dD", "δ2H", parameter))) %>%
+  mutate(putcode = putcode,
+         samplecode = paste(year, sample, sep = "_"),
          limit_symbol = dl,
-         detection_limit = NA,
-         method = "",
+         detection_limit = case_when(
+           year == 1992 & parameter %in% cat92 ~ 0.04,
+           year == 1992 & parameter %in% an92 ~ 0.1,
+           year == 1977 & units == "mg/l" ~ 1,
+           TRUE ~ NA_real_),
+         method = case_when(
+           year == 1992 & parameter %in% cat92 ~ "ICP-AES",
+           year == 1992 & parameter %in% an92 ~ "IC Dionex QIC",
+           TRUE ~ NA_character_),
+         units = ifelse(
+           parameter %in% c("c1", "c2", "c3", "c4", "clustermember", "pE", "SAR"), NA,
+           ifelse(parameter %in% c("δ18O", "δ2H"), "‰", 
+                  ifelse(parameter == "RSC", "meq/l", units))),
          notes = "",
          watercode = "GW",
          sampletype = "groundwater",
          subtype = "groundwater",
          xcoord = lon,
          ycoord = lat) %>%
-  select(samplecode, year, parameter, value, limit_symbol, detection_limit,
+  filter(!is.na(putcode)) %>%
+  select(putcode, samplecode, year, parameter, value, limit_symbol, detection_limit,
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
 
-data <- rbind(data %>% mutate(year = 2021,
+# add data from 1992 for Pb and F which were all <dl (0.04 and 0.1 mg/L respectively)
+set <- d %>%
+  filter(year == 1992) %>%
+  group_by(putcode, samplecode, year, notes, watercode, sampletype, subtype, xcoord, ycoord) %>%
+  summarise(parameter = c("Pb", "F"),
+            value = c(0.04, 0.1),
+            limit_symbol = "<",
+            detection_limit = c(0.04, 0.1),
+            units = "mg/l",
+            method = c("ICP-AES", "IC Dionex QIC")) %>%
+  select(putcode, samplecode, year, parameter, value, limit_symbol, detection_limit,
+         units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
+d <- rbind(d, set)
+
+## add data from 2021 Jessie
+
+## add everything together
+data <- rbind(data %>% mutate(putcode = NA, 
+                              year = 2021,
                               xcoord = NA,
                               ycoord = NA), d) %>%
-  select(samplecode, year, parameter, value, limit_symbol, detection_limit,
-         units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
+  select(putcode, samplecode, year, parameter, value, limit_symbol, detection_limit,
+         units, method, notes, watercode, sampletype, subtype, xcoord, ycoord) %>%
+  arrange(year, samplecode, parameter)
 
 ###############################################################################
 # save final database

@@ -306,7 +306,9 @@ set <- d %>%
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
 d <- rbind(d, set)
 
-## add data from 2021 Jessie
+## add data from 2021 Jessie ##
+
+
 
 ## add everything together
 data <- rbind(data %>% mutate(putcode = NA, 
@@ -316,6 +318,33 @@ data <- rbind(data %>% mutate(putcode = NA,
   select(putcode, samplecode, year, parameter, value, limit_symbol, detection_limit,
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord) %>%
   arrange(year, samplecode, parameter)
+
+# quick check dl 1992
+data %>%
+  filter(year == 1992,
+         parameter %in% c(cat92, an92)) %>%
+  filter(!parameter %in% c("Cl", "Na", "Ca", "Mg", "SO4")) %>%
+  ggplot(., aes(x = parameter, y = value)) +
+  geom_boxplot() +
+  theme_bw()
+  
+data %>%
+  filter(parameter == "PO4",
+         sampletype == "groundwater",
+         value < 1000) %>%
+  ggplot(., aes(x = as.character(year), y = value, group = year)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 8)) +
+  theme_bw()
+
+data %>%
+  filter(parameter == "PO4",
+         sampletype == "groundwater",
+         value < 1000) %>%
+  ggplot(., aes(x = value, group = year, fill = as.character(year))) +
+  geom_histogram(binwidth = .5, alpha = 0.5, position = "identity") +
+  #geom_density(alpha = 0.2) +
+  theme_bw()
 
 ###############################################################################
 # save final database

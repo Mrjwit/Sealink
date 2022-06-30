@@ -83,6 +83,11 @@ d2 <- data %>%
 d <- data %>%
   filter(year == 2021, !is.na(value))
 
+# add geology and land use
+d <- d %>%
+  left_join(., metadata %>% select(samplecode, geology, geology_abr, 
+                                   landuse_zonal_map, Land.use.based.on.own.observations))
+
 ## per individual element
 
 
@@ -108,7 +113,7 @@ ggplot(d %>% filter(parameter %in% c("pH", "Eh", "EC_uS", "Temp", "DO", "DO_sat"
   scale_y_continuous(name = "", trans = "log10") +
   theme_bw() +
   facet_wrap(~ parameter, scales = "free")
-ggsave(paste0(output, "figures/boxplot_fieldparameters.png"))
+#ggsave(paste0(output, "figures/boxplot_fieldparameters.png"))
 
 # parameters in mg/l
 d <- data %>%
@@ -136,7 +141,7 @@ ggplot(d %>% filter(units == "mg/l",
                                          labels = trans_format("log10", math_format(10^.x)))) +
   theme_bw() + 
   annotation_logticks(sides = "lr")
-ggsave(paste0(output, "figures/boxplot_parameters_mgl.png"))
+#ggsave(paste0(output, "figures/boxplot_parameters_mgl.png"))
 
 # parameters in ug/l
 d <- data %>%
@@ -162,9 +167,9 @@ ggplot(d %>% filter(units == "ug/l") %>%
                                         labels = trans_format("log10", math_format(10^.x)))) +
   theme_bw() + 
   annotation_logticks(sides = "lr")
-ggsave(paste0(output, "figures/groundwater_boxplot_parameters_ugl.png"))
+#ggsave(paste0(output, "figures/groundwater_boxplot_parameters_ugl.png"))
 
-# parameters in ug/l
+# all metals in ug/l
 # metals excluding Ag and Cd as they are all <dl
 metals <- c("Al", "As", "B", "Ba", "Be", "Ca", "Co", "Cr", "Cu", "Fe", "K", "Li", 
             "Mg", "Mn", "Mo", "Na", "Ni", "Pb", "Sb", "Se", "Si", "Ti", "V", "Zn")
@@ -224,6 +229,40 @@ ggplot(d %>% mutate(myaxis = paste0(parameter, "\n", num)),
   theme_bw() + 
   annotation_logticks(sides = "lr")
 ggsave(paste0(output, "figures/groundwater_wastewater_boxplot_metals_ugl.png"))
+
+
+# metals per geology
+d <- data %>%
+  filter(year == 2021, !is.na(value),
+         sampletype == "groundwater",
+         parameter %in% metals) %>%
+  mutate(value = ifelse(units == "mg/l", value * 1000, value))
+# add geology and land use
+d <- d %>%
+  left_join(., metadata %>% select(samplecode, geology, geology_abr, 
+                                   landuse_zonal_map, Land.use.based.on.own.observations))
+
+sample_size <- d %>%
+  group_by(parameter, geology) %>% 
+  dplyr::summarise(num = n())
+d <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = factor(paste0("n=", num)))
+ggplot(d %>% mutate(myaxis = paste0(parameter, "\n", num)), 
+       aes(x = parameter, y = value, fill = geology)) +
+  #stat_boxplot(geom = "errorbar", width = 0.4) +
+  geom_boxplot(width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[ug/L]", trans = 'log10',
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)),
+                     sec.axis = sec_axis(~.,
+                                         labels = trans_format("log10", math_format(10^.x)))) +
+  theme_bw() + 
+  theme(legend.position = c(0.86, 0.83)) +
+  annotation_logticks(sides = "lr") 
+  #facet_wrap(facets = "geology", nrow = 6)
+
 
 calc_boxplot_stat <- function(x) {
   coef <- 1.5

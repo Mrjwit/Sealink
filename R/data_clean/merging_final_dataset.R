@@ -268,7 +268,7 @@ d <- data1977_1992 %>%
                             ifelse(parameter == "dD", "δ2H", parameter))) %>%
   mutate(putcode = putcode,
          samplecode = paste(year, sample, sep = "_"),
-         limit_symbol = dl,
+         limit_symbol = ifelse(is.na(dl), "", dl),
          detection_limit = case_when(
            year == 1992 & parameter %in% cat92 ~ 0.04,
            year == 1992 & parameter %in% an92 ~ 0.1,
@@ -291,6 +291,10 @@ d <- data1977_1992 %>%
   filter(!is.na(putcode)) %>%
   select(putcode, samplecode, year, parameter, value, limit_symbol, detection_limit,
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
+
+# correct some values for pH and...
+d <- d %>%
+  mutate(value = ifelse(parameter == "pH" & value == 0, NA, value))
 
 # add data from 1992 for Pb and F which were all <dl (0.04 and 0.1 mg/L respectively)
 set <- d %>%

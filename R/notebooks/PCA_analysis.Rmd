@@ -1,0 +1,112 @@
+---
+title: "PCA analysis"
+author: "Mike Wit"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Loading packages
+if (!require("pacman")) install.packages("pacman")
+# pacman::p_load(tidyverse, openxlsx, ggmap, devtools,
+#                sf, cowplot, scales, corrplot, Hmisc, ggpubr,
+#                ggbiplot, ggcorrplot, psych, FactoMineR)
+pacman::p_load(tidyverse, openxlsx, FactoMineR,
+               vegan, ggcorrplot, corrplot, factoextra,
+               PerformanceAnalytics)
+```
+
+```{r, include=FALSE}
+# set data file location
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
+
+# load cleaned data
+data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
+
+# output file location
+output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
+```
+
+# PCA Analysis 2021
+
+```{r}
+# only select parameters Iris used for groundwater samples
+d <- data %>%
+  filter(year == 2021) %>%
+  filter(sampletype == "groundwater") %>%
+  filter(parameter %in% c("pH", "NO3", "PO4", "HCO3", "E.coli", "F", "Cl", 
+                          "SO4", "NH4", "Temp", "EC_uS", "Eh", "Br", "B",
+                          "Ca", "Fe", "K", "Mg", "Na", "Si")) %>%
+  # select only samplecode and concentrations and convert to wide format
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  select(-samplecode)
+
+# scale if necessary. Is done within PCA function
+#d <- scale(d[,-1])
+
+# PCA
+res.pca <- PCA(d, graph = T)
+```
+
+
+
+
+```{r}
+# print summary of PCA results
+summary(res.pca)
+```
+
+
+
+```{r}
+
+
+# extract and visualize eigenvalues/variances
+get_eig(res.pca)
+# res <- get_eig(res.pca) %>% unlist() # 5 dimensions with eigenvalue > 1, explaining 76% of variance
+# res %>% filter(eigenvalue > 1) %>%
+#   print()
+fviz_screeplot(res.pca, addlabels = T)
+
+```
+
+
+```{r}
+
+# Extract and visualize results for variables
+var <- get_pca_var(res.pca)
+var
+# correlations between variables and dimensions
+show(var$cor)
+# contribution of variables to dimensions
+show(var$contrib)
+```
+# Contribution of variables to dimensions 1-5
+
+```{r}
+# default graph of variables
+fviz_pca_var(res.pca, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE ) # Avoid text overlapping
+
+#### Variable contributions to the principal axes
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 10)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 10)
+# Contributions of variables to PC3
+fviz_contrib(res.pca, choice = "var", axes = 3, top = 10)
+# Contributions of variables to PC4
+fviz_contrib(res.pca, choice = "var", axes = 4, top = 10)
+# Contributions of variables to PC5
+fviz_contrib(res.pca, choice = "var", axes = 5, top = 10)
+
+
+```
+# Contribution of samples to dimensions
+
+
+
+

@@ -19,7 +19,8 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, openxlsx, scales, ggtext)
+pacman::p_load(tidyverse, openxlsx, scales, ggtext, ggcorrplot,
+               corrplot, FactoMineR)
 
 ###############################################################################
 # load data
@@ -161,7 +162,7 @@ metals <- c("Al", "As", "B", "Ba", "Be", "Ca", "Co", "Cr", "Cu", "Fe", "K", "Li"
 
 # select only 2021 and adjust units to ug/L for boxplots
 d <- data %>%
-  filter(#year == 2021, 
+  filter(year == 2021, 
          !is.na(value),
          parameter %in% metals) %>%
   mutate(value = ifelse(units == "mg/l", value * 1000, value))
@@ -194,9 +195,182 @@ ggplot(dat %>% mutate(myaxis = paste0(parameter, "\n", num)),
                      sec.axis = sec_axis(~.,
                                          labels = trans_format("log10", math_format(10^.x)))) +
   theme_bw() + 
-  annotation_logticks(sides = "lr")
-ggsave(paste0(output, "figures/boxplot_all_metals_ugl.png"))
+  annotation_logticks(sides = "lr") +
+  labs(title = "All metals in all sample types, 2021")
+ggsave(paste0(output, "figures/metals/boxplot_all_metals_ugl.png"), dpi = 1000)
 
+# metals differentiating between sample types
+
+
+# only trace metals in all samples
+sample_size <- d %>%
+  filter(!parameter %in% c("Ca", "K", "Mg", "Na", "Si")) %>%
+  group_by(parameter) %>% 
+  dplyr::summarise(num = n())
+dat <- d %>%
+  filter(!parameter %in% c("Ca", "K", "Mg", "Na", "Si")) %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = factor(paste0("n=", num)))
+ggplot(dat %>% mutate(myaxis = paste0(parameter, "\n", num)), 
+       aes(x = myaxis, y = value)) +
+  stat_boxplot(geom = "errorbar", width = 0.4) +
+  geom_boxplot(fill = "lightgrey", width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[ug/L]", trans = 'log10',
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)),
+                     sec.axis = sec_axis(~.,
+                                         labels = trans_format("log10", math_format(10^.x)))) +
+  theme_bw() + 
+  annotation_logticks(sides = "lr") +
+  labs(title = "Trace metals in all sample types, 2021")
+ggsave(paste0(output, "figures/metals/boxplot_trace_metals_ugl.png"), dpi = 1000)
+
+# all metals in groundwater
+sample_size <- d %>%
+  filter(sampletype == "groundwater") %>%
+  group_by(parameter) %>% 
+  dplyr::summarise(num = n())
+dat <- d %>%
+  filter(sampletype == "groundwater") %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = factor(paste0("n=", num)))
+ggplot(dat %>% mutate(myaxis = paste0(parameter, "\n", num)), 
+       aes(x = myaxis, y = value)) +
+  stat_boxplot(geom = "errorbar", width = 0.4) +
+  geom_boxplot(fill = "lightgrey", width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[ug/L]", trans = 'log10',
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)),
+                     sec.axis = sec_axis(~.,
+                                         labels = trans_format("log10", math_format(10^.x)))) +
+  theme_bw() + 
+  annotation_logticks(sides = "lr") +
+  labs(title = "All metals in groundwater, 2021")
+ggsave(paste0(output, "figures/metals/boxplot_all_metals_gw_ugl.png"), dpi = 1000)
+
+# only trace/heavy metals in groundwater
+sample_size <- d %>%
+  filter(sampletype == "groundwater",
+         !parameter %in% c("Ca", "K", "Mg", "Na", "Si")) %>%
+  group_by(parameter) %>% 
+  dplyr::summarise(num = n())
+dat <- d %>%
+  filter(sampletype == "groundwater",
+         !parameter %in% c("Ca", "K", "Mg", "Na", "Si")) %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = factor(paste0("n=", num)))
+ggplot(dat %>% mutate(myaxis = paste0(parameter, "\n", num)), 
+       aes(x = myaxis, y = value)) +
+  stat_boxplot(geom = "errorbar", width = 0.4) +
+  geom_boxplot(fill = "lightgrey", width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[ug/L]", trans = 'log10',
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)),
+                     sec.axis = sec_axis(~.,
+                                         labels = trans_format("log10", math_format(10^.x)))) +
+  theme_bw() + 
+  annotation_logticks(sides = "lr") +
+  labs(title = "Trace metals in groundwater, 2021")
+ggsave(paste0(output, "figures/metals/boxplot_trace_metals_gw_ugl.png"), dpi = 1000)
+
+#### Correlation diagram ####
+# leave Ag, Be, Cd, Sb
+metals_cor <- c("Al", "As", "B", "Ba", 
+                "Ca", "Co", "Cr", "Cu", "Fe",
+                "K", "Li", "Mg", "Mn", "Mo", "Na", 
+                "Ni", "P", "Pb", "S", "Se",
+                "Si", "Ti", "V", "Zn")
+
+# check distributions -> most fit a lognormal distribution. This has implications for the calculated means and sd and correlations!
+d %>%
+  filter(sampletype == "groundwater") %>%
+  mutate(logvalue = log(value)) %>%
+  ggplot(., aes(x = logvalue)) +
+  geom_density() +
+  facet_wrap(facets = "parameter", scales = "free") +
+  theme_bw()
+
+# only for groundwater
+dat <- d %>%
+  filter(sampletype == "groundwater") %>%
+  filter(parameter %in% metals_cor) %>%
+  mutate(logvalue = log(value)) %>%
+  # select only samplecode and concentrations and convert to wide format
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  #select(samplecode, parameter, logvalue) %>%
+  # pivot_wider(names_from = parameter,
+  #             values_from = logvalue) %>%
+  # remove outliers? 
+  #filter(!samplecode %in% c("GW021", "GW030")) %>%
+  select(-samplecode)
+
+# Correlation diagram
+p_mat <- cor_pmat(dat) # computes correlation matrix with p-values
+corr <- cor(dat, use = "complete.obs", # computes correlation matrix   
+            method = "kendall")  # use Spearman or Kendall for non normal distributions
+corrplot(corr, method = "circle", type = "lower", order = "hclust", 
+         p.mat = p_mat, sig.level = 0.05, insig = "blank",
+         tl.col = "black", tl.srt = 45)
+
+# correlation chart to see distribution, bivariate scatter plots and correlation values
+chart.Correlation(dat, histogram = T, pch=19)
+
+# PCA
+res.pca <- PCA(dat, graph = T)
+summary(res.pca)
+# plot of eigenvalues
+ggplot(data.frame(res.pca$eig), aes(x = 1:nrow(res.pca$eig), y = res.pca$eig[,1])) +
+  geom_col(fill = "steelblue") +
+  geom_hline(yintercept = 1) +
+  theme_bw() +
+  labs(x = "Components",
+       y = "Eigenvalues")
+
+plot(res.pca, choix = "ind", habillage=2)
+# which parameters relate significantly to which dimension
+dimdesc(res.pca, axes = 1:2)
+
+# draw elipses around 13th variable which is categorical
+plotellipses(res.pca, 13)
+
+
+
+# extract and visualize eigenvalues/variances
+get_eig(res.pca) # 5 dimensions with eigenvalue > 1, explaining 76% of variance
+fviz_screeplot(res.pca, addlabels = T)
+
+# Extract and visualize results for variables
+var <- get_pca_var(res.pca)
+var
+# correlations between variables
+show(var$cor)
+# contribution of variables
+show(var$contrib)
+# default graph of variables
+fviz_pca_var(res.pca, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE ) # Avoid text overlapping
+
+#### Variable contributions to the principal axes
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 10)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 10)
+# Contributions of variables to PC3
+fviz_contrib(res.pca, choice = "var", axes = 3, top = 10)
+# Contributions of variables to PC4
+fviz_contrib(res.pca, choice = "var", axes = 4, top = 10)
+# Contributions of variables to PC5
+fviz_contrib(res.pca, choice = "var", axes = 5, top = 10)
+
+
+
+#### PCA metals ####
 
 
 
@@ -258,4 +432,10 @@ ggplot(dat, aes(x=as.factor(year), y=value)) +
   theme_bw() +
   labs(x = "", y = "pH")
 
+data %>%
+  filter(year == 2021, sampletype != "air", method == "ICP-MS") %>%
+  group_by(parameter, method, units) %>%
+  summarise(detetion_limit = detection_limit) %>%
+  distinct() %>%
+  view()
 

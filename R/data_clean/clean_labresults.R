@@ -501,7 +501,10 @@ d <- ICP_total %>%
   mutate(limit_symbol = ifelse(str_detect(value, "b"), "<", 
                                ifelse(str_detect(value, "x"), ">", "")),
          # range = 1 - 100 ug/l, dl = 0.1?
-         detection_limit = 1.0,
+         detection_limit = case_when(
+           parameter %in% c("Ca", "S", "Si") ~ 500,
+           parameter %in% c("Na", "Mg", "K") ~ 100,
+           TRUE ~ 1.0),
          units = "ug/l") %>%
   # change values to numeric 
   mutate(value = parse_number(value)) %>%

@@ -5,6 +5,12 @@
 # Session Data files
 .RData
 
+# PDF files
+.pdf
+
+# HTML files
+.html
+
 # User-specific files
 .Ruserdata
 
@@ -37,3 +43,4 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+.Rproj.user

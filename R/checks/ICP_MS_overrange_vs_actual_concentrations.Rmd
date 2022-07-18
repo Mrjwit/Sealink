@@ -1,0 +1,266 @@
+---
+title: "ICP-MS overrange values"
+author: "Mike Wit"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+# Loading packages
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, openxlsx, skimr,
+               data.table, cowplot, data.table)
+```
+
+```{r, include=F}
+# set data file location
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
+
+# NOTE: the results are copied from the 'Check results' tab to the 'Report' tab
+
+## ICP data file
+ICP_total <- read.xlsx(paste0(input, "Lab/ICP/ICP-results_GW001_WW003.xlsx"),
+                       sheet = "FINAL")
+ICP_overrange <- read.xlsx(paste0(input, "Lab/ICP/ICP-results_GW001_WW003.xlsx"),
+                           sheet = "Analysis #1")
+
+# output file location
+output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
+```
+
+## Editing data
+
+
+```{r}
+# first check for Na
+Na_ok <- ICP_total %>%
+  select(Samplecode, `Na23.[nG].ppb.ppb`) %>%
+  mutate(Na_ok = `Na23.[nG].ppb.ppb` / 1000) %>%
+  select(-`Na23.[nG].ppb.ppb`)
+
+Na_overrange <- ICP_overrange %>%
+  select(Samplecode, X9, X11, X26) %>%
+  filter(!is.na(Samplecode)) %>%
+  mutate(Na_overrange = as.numeric(gsub("x", "", X11)) / 1000) %>%
+  # Exclude concentrations that were not overrange
+  filter(str_detect(X11, "x")) %>%
+  left_join(., Na_ok) %>%
+  mutate(perc_dev = (Na_overrange - Na_ok) / Na_ok * 100) %>%
+  mutate(deviation = case_when(
+    abs(perc_dev) > 10 ~ "> 10%",
+    abs(perc_dev) > 5 & abs(perc_dev) <= 10 ~ "> 5%",
+    abs(perc_dev) <= 5 ~ "< 5%",
+    TRUE ~ "other")) %>%
+  mutate(deviation = factor(deviation,
+                            levels = c("> 10%", "> 5%", "< 5%", "other")))
+
+
+```
+Now select parameters with overrange values and merge datasets together as preparation for plotting and analysis. 
+
+```{r}
+# select data from B, Na, Ca from accurate measurements
+acc_meas <- ICP_total %>%
+  select(Samplecode, `B11.[nG].ppb.ppb`, `Na23.[nG].ppb.ppb`,
+         `Ca44.[He].ug/L.ppb`) 
+names(acc_meas) <- c("samplecode", "B", "Na", "Ca")
+
+acc_meas <- acc_meas %>%
+  mutate(B = gsub("x", "", B) %>% as.numeric()) %>%
+  pivot_longer(., cols = B:Ca,
+               names_to = "parameter",
+               values_to = "acc_conc") %>%
+  mutate(acc_conc = acc_conc / 1000)
+
+# select data from B, Na, Ca from overrange measurements
+overrange_meas <- ICP_overrange %>%
+  select(Samplecode, X9, X11, X26) %>%
+  filter(!is.na(Samplecode))
+names(overrange_meas) <- c("samplecode", "B", "Na", "Ca")
+
+overrange_meas <- overrange_meas %>%
+  pivot_longer(., cols = B:Ca,
+               names_to = "parameter", 
+               values_to = "overrange_conc") %>%
+  # exclude concentrations that were not overrange to compare with accurate measurements later
+  filter(str_detect(overrange_conc, "x")) %>%
+  # convert characters to numeric and convert ug/L to mg/L
+  mutate(overrange_conc = gsub("x", "", overrange_conc) %>% as.numeric / 1000) 
+
+# join accurate and overrange measurements together
+d <- left_join(overrange_meas, acc_meas) %>%
+  # add perc deviations and deviation classes
+  mutate(perc_dev = (overrange_conc - acc_conc) / acc_conc * 100) %>%
+  mutate(deviation = case_when(
+    abs(perc_dev) > 10 ~ "> 10%",
+    abs(perc_dev) > 5 & abs(perc_dev) <= 10 ~ "> 5%",
+    abs(perc_dev) <= 5 ~ "< 5%",
+    TRUE ~ "other")) %>%
+  mutate(deviation = factor(deviation,
+                            levels = c("> 10%", "> 5%", "< 5%", "other")))
+```
+## Comparing and plotting data
+
+### For all measurements
+
+```{r}
+# plot 1:1
+ggplot(d, aes(x = overrange_conc, y = acc_conc, colour = deviation)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  #geom_smooth(method = "lm") +
+  coord_cartesian(xlim = c(0, 13000),
+                  ylim = c(0, 13000)) +
+  # coord_cartesian(xlim = c(0, 1500),
+  #                 ylim = c(0, 1500)) +
+  labs(x = "overrange conc [mg/L]",
+       y = "accurate conc [mg/L]") +
+  #coord_fixed() +
+  theme_bw()
+
+# concentrations vs deviation  
+ggplot(d, aes(x = overrange_conc, y = perc_dev, colour = deviation)) +
+  geom_point() +
+  geom_hline(yintercept = 10, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = -10, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = -5, linetype = "dashed", colour = "green") +
+  geom_hline(yintercept = 5, linetype = "dashed", colour = "green") +
+  labs(x = "overrange conc [mg/L]",
+       y = "deviation vs actual concentration [%]") +
+  theme_bw()
+
+# histogram of deviations
+ggplot(d, aes(x = perc_dev)) +
+  geom_histogram(binwidth = 2, position = "identity", colour = "#e9ecef", fill = "steelblue") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(x = "deviation vs actual concentration [%]",
+       y = "count") +
+  annotate(geom = "text", x = -10, y = 12, label = "accurate value higher", angle = 0, colour = "red") + 
+  annotate(geom = "text", x = 20, y = 12, label = "overrange value higher", angle = 0, colour = "red") + 
+  theme_bw()
+
+```
+
+### Only Na
+
+```{r, echo=F}
+# plot 1:1
+ggplot(d %>% filter(parameter == "Na"), aes(x = overrange_conc, y = acc_conc, colour = deviation)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  #geom_smooth(method = "lm") +
+  coord_cartesian(xlim = c(0, 13000),
+                  ylim = c(0, 13000)) +
+  # coord_cartesian(xlim = c(0, 1500),
+  #                 ylim = c(0, 1500)) +
+  labs(x = "Na overrange [mg/L]",
+       y = "Na accurate [mg/L]") +
+  #coord_fixed() +
+  theme_bw()
+
+# concentrations vs deviation  
+ggplot(d %>% filter(parameter == "Na"), aes(x = overrange_conc, y = perc_dev, colour = deviation)) +
+  geom_point() +
+  geom_hline(yintercept = 10, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = -10, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = -5, linetype = "dashed", colour = "green") +
+  geom_hline(yintercept = 5, linetype = "dashed", colour = "green") +
+  labs(x = "Na overrange [mg/L]",
+       y = "deviation vs actual Na concentration [%]") +
+  theme_bw()
+
+# histogram of deviations
+ggplot(d %>% filter(parameter == "Na"), aes(x = perc_dev)) +
+  geom_histogram(binwidth = 2, position = "identity", colour = "#e9ecef", fill = "steelblue") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(x = "deviation vs actual Na concentration [%]",
+       y = "count") +
+  annotate(geom = "text", x = -10, y = 12, label = "accurate value higher", angle = 0, colour = "red") + 
+  annotate(geom = "text", x = 12, y = 12, label = "overrange value higher", angle = 0, colour = "red") + 
+  theme_bw()
+
+```
+
+### Only Ca
+
+```{r, echo=F}
+# plot 1:1
+ggplot(d %>% filter(parameter == "Ca"), aes(x = overrange_conc, y = acc_conc, colour = deviation)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  #geom_smooth(method = "lm") +
+  coord_cartesian(xlim = c(0, 5000),
+                  ylim = c(0, 5000)) +
+  # coord_cartesian(xlim = c(0, 1500),
+  #                 ylim = c(0, 1500)) +
+  labs(x = "Ca overrange [mg/L]",
+       y = "Ca accurate [mg/L]") +
+  #coord_fixed() +
+  theme_bw()
+
+# concentrations vs deviation  
+ggplot(d %>% filter(parameter == "Ca"), aes(x = overrange_conc, y = perc_dev, colour = deviation)) +
+  geom_point() +
+  geom_hline(yintercept = 10, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = -10, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = -5, linetype = "dashed", colour = "green") +
+  geom_hline(yintercept = 5, linetype = "dashed", colour = "green") +
+  labs(x = "Ca overrange [mg/L]",
+       y = "deviation vs actual Ca concentration [%]") +
+  theme_bw()
+
+# histogram of deviations
+ggplot(d %>% filter(parameter == "Ca"), aes(x = perc_dev)) +
+  geom_histogram(binwidth = 2, position = "identity", colour = "#e9ecef", fill = "steelblue") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(x = "deviation vs actual Ca concentration [%]",
+       y = "count") +
+  annotate(geom = "text", x = -5, y = 8, label = "accurate value higher", angle = 0, colour = "red") + 
+  annotate(geom = "text", x = 20, y = 8, label = "overrange value higher", angle = 0, colour = "red") + 
+  theme_bw()
+
+```
+
+### Only B
+
+```{r, echo=F}
+# plot 1:1
+ggplot(d %>% filter(parameter == "B"), aes(x = overrange_conc, y = acc_conc, colour = deviation)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  #geom_smooth(method = "lm") +
+  coord_cartesian(xlim = c(0, 5),
+                  ylim = c(0, 5)) +
+  # coord_cartesian(xlim = c(0, 1500),
+  #                 ylim = c(0, 1500)) +
+  labs(x = "B overrange [mg/L]",
+       y = "B accurate [mg/L]") +
+  #coord_fixed() +
+  theme_bw()
+
+# concentrations vs deviation  
+ggplot(d %>% filter(parameter == "B"), aes(x = overrange_conc, y = perc_dev, colour = deviation)) +
+  geom_point() +
+  geom_hline(yintercept = 10, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = -10, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = -5, linetype = "dashed", colour = "green") +
+  geom_hline(yintercept = 5, linetype = "dashed", colour = "green") +
+  labs(x = "B overrange [mg/L]",
+       y = "deviation vs actual B concentration [%]") +
+  theme_bw()
+
+# histogram of deviations
+ggplot(d %>% filter(parameter == "B"), aes(x = perc_dev)) +
+  geom_histogram(binwidth = 2, position = "identity", colour = "#e9ecef", fill = "steelblue") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(x = "deviation vs actual B concentration [%]",
+       y = "count") +
+  annotate(geom = "text", x = -2, y = 2, label = "accurate value higher", angle = 0, colour = "red") + 
+  annotate(geom = "text", x = 5, y = 2, label = "overrange value higher", angle = 0, colour = "red") + 
+  theme_bw()
+
+```
+
+

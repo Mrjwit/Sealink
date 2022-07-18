@@ -283,6 +283,12 @@ metals_cor <- c("Al", "As", "B", "Ba",
                 "K", "Li", "Mg", "Mn", "Mo", "Na", 
                 "Ni", "P", "Pb", "S", "Se",
                 "Si", "Ti", "V", "Zn")
+# alternative selection without Na, Ca, Mg
+metals_cor <- c("Al", "As", "B", "Ba", 
+                "Co", "Cr", "Cu", "Fe",
+                "K", "Li", "Mn", "Mo",  
+                "Ni", "P", "Pb", "S", "Se",
+                "Si", "Ti", "V", "Zn")
 
 # check distributions -> most fit a lognormal distribution. This has implications for the calculated means and sd and correlations!
 d %>%
@@ -312,7 +318,7 @@ dat <- d %>%
 # Correlation diagram
 p_mat <- cor_pmat(dat) # computes correlation matrix with p-values
 corr <- cor(dat, use = "complete.obs", # computes correlation matrix   
-            method = "kendall")  # use Spearman or Kendall for non normal distributions
+            method = "spearman")  # use Spearman or Kendall for non normal distributions
 corrplot(corr, method = "circle", type = "lower", order = "hclust", 
          p.mat = p_mat, sig.level = 0.05, insig = "blank",
          tl.col = "black", tl.srt = 45)
@@ -339,6 +345,8 @@ dimdesc(res.pca, axes = 1:2)
 plotellipses(res.pca, 13)
 
 
+
+# using other package
 
 # extract and visualize eigenvalues/variances
 get_eig(res.pca) # 5 dimensions with eigenvalue > 1, explaining 76% of variance

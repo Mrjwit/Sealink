@@ -23,10 +23,10 @@ pacman::p_load(tidyverse, openxlsx, ggmap, devtools,
                sf, cowplot, scales, corrplot, Hmisc, ggpubr,
                ggbiplot, ggcorrplot, psych, FactoMineR, polynom)
 
-install_github("vqv/ggbiplot")
-library(plyr)
-library(dplyr)
-library(ggbiplot)
+# install_github("vqv/ggbiplot")
+# library(plyr)
+# library(dplyr)
+# library(ggbiplot)
 
 ###############################################################################
 # load data
@@ -46,6 +46,17 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 # Editing data
 ###############################################################################
 
+#putcodes # 233 in 1977, 95 in 1992              170 uit 1977 niet in 1992 (63 wel), 32 uit 1992 niet in 1977 (63 wel)
+setdiff(data %>% filter(year == 1992) %>% select(putcode) %>% distinct(),
+        data %>% filter(year == 1977) %>% select(putcode) %>% distinct())
+
+data %>% filter(year %in% c(1992, 2021),
+                sampletype == "groundwater",
+                parameter %in% c("Na", "Cl")) %>%
+  ggplot(., aes(x = as.character(year), y = value)) +
+  geom_boxplot() +
+  facet_wrap(facets = "parameter")
+
 # add geology and land use
 data <- data %>%
   left_join(., metadata %>% select(samplecode, geology, geology_abr, 
@@ -63,8 +74,10 @@ data %>%
   filter(year == 2021, 
          sampletype == "groundwater",
          samplecode != "SP001B") %>%
-  select(samplecode, landuse_zonal_map) %>%
-  group_by(landuse_zonal_map) %>%
+  select(samplecode, geology) %>%
+  group_by(geology) %>%
+  summarise(n_distinct(samplecode))
+  
   summarise(n = n_distinct(samplecode),
             `%` = round(n / 79 * 100, digits = 0)) %>%
   rbind(., c("Total", colSums(.[,2:3])))

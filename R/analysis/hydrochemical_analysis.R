@@ -46,6 +46,22 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 # Editing data
 ###############################################################################
 
+d <- data %>%
+  filter(year == 2021,
+         sampletype != "air",
+         parameter %in% c("Cl", "EC_uS", "NO3", "NH4")) %>%
+  select(samplecode, sampletype, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  mutate('fresh/saline' = case_when(
+    Cl < 150 ~ "fresh",
+    Cl >= 150 & Cl < 1000 ~ "fresh-brackish",
+    Cl >= 1000 & Cl < 3000 ~ "brackish",
+    Cl >= 3000 & Cl < 21000 ~ "saline",
+    TRUE ~ "hypersaline" ))
+  
+  
+
 #putcodes # 233 in 1977, 95 in 1992              170 uit 1977 niet in 1992 (63 wel), 32 uit 1992 niet in 1977 (63 wel)
 setdiff(data %>% filter(year == 1992) %>% select(putcode) %>% distinct(),
         data %>% filter(year == 1977) %>% select(putcode) %>% distinct())
@@ -1298,7 +1314,72 @@ ggplot(d %>% filter(units == "ug/l") %>%
   theme_bw() + 
   annotation_logticks(sides = "lr")
 ggsave(paste0(output, "figures/boxplot_parameters_ugl.png"))
-  
+
+#### difference between years ####
+
+dat <- data %>%
+  filter(parameter == "pH",
+         sampletype == "groundwater")
+
+# experiment wide kruskal significance test
+kt <- kruskal.test(value ~ year, data = dat)
+
+if(kt$p.value < 0.05) {
+  pt <- pairwise.wilcox.test(dat$value, dat$year,
+                             p.adjust.method = "BH") # method = Benjamini-Hochberg
+}
+
+n_count <- dat %>%
+  count(year)
+dat <- dat %>%
+  left_join(., n_count) %>%
+  mutate(myaxis = paste0(year, "\n", "N=", n))
+ggplot(dat, aes(x = myaxis, y = value, fill = as.factor(year))) +
+  geom_boxplot(alpha = 0.7, show.legend = F) +
+  #geom_violin(alpha = 0.2, show.legend = F) +
+  stat_summary(fun = median, show.legend = F, geom = "crossbar") +
+  #geom_jitter(show.legend = F, width = 0.25, shape = 21, color = "black") +
+  labs(title =  "pH trend from 1977 till 2021 in groundwater, Curacao",
+       x = NULL,
+       y = "pH") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 18)) +
+  #theme(axis.text.x = element_markdown())
+  geom_line(data = tibble(x = c(2, 3), y = c(8.5, 8.5)),
+            aes(x=x, y=y),
+            inherit.aes = F) +
+  geom_line(data = tibble(x = c(1, 2.5), y = c(9.8, 9.8)),
+            aes(x=x, y=y),
+            inherit.aes = F) +
+  geom_text(data = tibble(x = c(2.5), y = 8.6),
+            aes(x = x, y = y), label = "*", size = 6,
+            inherit.aes = F) +
+  geom_text(data = tibble(x = c(1.75), y = 9.9),
+            aes(x = x, y = y), label = "*", size = 6,
+            inherit.aes = F)
+
+ggplot(dat, aes(x = as.factor(year), y = value, fill = as.factor(year))) +
+  geom_point(shape = 21, size = 2, stroke = 0.5)  +
+  #coord_fixed() +
+  labs(title = "pH trend from 1977 till 2021",
+       x = "",
+       y = "pH") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+
+ggplot(dat, aes(x=as.factor(year), y=value)) +
+  geom_boxplot() +
+  theme_bw() +
+  labs(x = "", y = "pH")
+
+data %>%
+  filter(year == 2021, sampletype != "air", method == "ICP-MS") %>%
+  group_by(parameter, method, units) %>%
+  summarise(detetion_limit = detection_limit) %>%
+  distinct() %>%
+  view()
+
   
 #### Overzicht voor ICP-OES data  ####
 # 

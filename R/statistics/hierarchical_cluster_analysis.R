@@ -50,11 +50,16 @@ set <- c("pH", "EC_uS", "Na", "Ca", "K", "Fe", "Mg", "Si", "NH4",
 metals <- c("Al", "As", "B", "Ba", "Be", "Ca", "Co", "Cr", "Cu", "Fe", "K", "Li", 
             "Mg", "Mn", "Mo", "Na", "Ni", "Pb", "Sb", "Se", "Si", "Ti", "V", "Zn")
 
+# parameters to avoid
+avoid <- c("NO2_field", "NO3_field", "Eh", "DO_sat", 
+           "HCO3_field", "HCO3_lab", "Rn", "Ag", "Cd",
+           "P", "S")
+
 # select only 2021 and select relevant parameters from above
 d <- data %>%
   filter(year == 2021, 
          !is.na(value),
-         parameter %in% metals) 
+         parameter %in% set) 
 
 # add geology and land use
 d <- d %>%
@@ -65,8 +70,14 @@ d <- d %>%
 dat <- d %>%
   # only for groundwater
   #filter(sampletype == "groundwater") %>%
+  # filter(!parameter %in% avoid,
+  #        method != "IA") %>%
+  # mutate(value = ifelse(parameter %in% c("E.coli", "DO"), value + 1, value)) %>%
   # log transform values due to non normal distribution ?
-  mutate(logvalue = ifelse(parameter != "pH", log(value), value)) %>%
+  # pH and isotopes should not be log transformed
+  mutate(sel = ifelse(parameter == "pH" | method == "IA", 1, 0)) %>%
+  #filter(sel == 0) %>%
+  mutate(logvalue = ifelse(sel == 1, value, log(value))) %>%
   # select only samplecode and concentrations and convert to wide format
   # select(samplecode, parameter, value) %>%
   # pivot_wider(names_from = parameter,
@@ -122,19 +133,25 @@ fviz_gap_stat(gap_stat)
 hclust_avg <- hclust(dist_mat, method = "average")
 hclust_var <- hclust(dist_mat, method = "ward.D")
 # standard plot dendrogram
-plot(hclust_var, cex = 0.7, hang = -1)
+plot(hclust_var, cex = 0.7, hang = -1,
+     main = "HCA Ward's method", sub = NA, xlab = NA)
 # clusters for main constituents 
+# colours
+# colour blind friendly:
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+# default ggplot colours:
+hex_codes <- hue_pal()(5) # show_col(hex_codes) shows colours + codes
 abline(h = 16, col = "red", lty = "dashed")
-rect.hclust(hclust_var, k = 4, border = 2:6)
+rect.hclust(hclust_var, k = 5, border = c("#00BF7D", "#00B0F6", "#A3A500", "#E76BF3", "#F8766D"))
 # abline(h = 12, col = "green", lty = "dashed")
 # rect.hclust(hclust_var, k = 6, border = 2:6)
 
-# 
-plot(as.phylo(hclust_var), cex = 0.6, label.offset = 0.5)
-# fan plot
-colors <- c("red", "blue", "green", "orange", "black")
-plot(as.phylo(hclust_var), cex = 0.6, label.offset = 0.5,
-     type = "fan", tip.color = colors[cut_var])
+# # Other plot possibilities 
+# plot(as.phylo(hclust_var), cex = 0.6, label.offset = 0.5)
+# # fan plot
+# colors <- c("red", "blue", "green", "orange", "black")
+# plot(as.phylo(hclust_var), cex = 0.6, label.offset = 0.5,
+#      type = "fan", tip.color = colors[cut_var])
 
 # for metals
 
@@ -144,13 +161,9 @@ cut_var <- cutree(hclust_var, k = 5)
 table(cut_var)
 
 # visualise clusters in scatter plot (similar to PCA?)
-p <- fviz_cluster(list(data = dat, cluster = cut_var))
+p <- fviz_cluster(list(data = dat, cluster = cut_var),
+                  main = "Ward's method clusters of main constituents")
 p + theme_bw()
-
-# add cluster column to dataset
-dat %>%
-  mutate(cluster = cut_var) %>%
-  head()
 
 ## comparing 2 clustering methods
 dend1 <- as.dendrogram(hclust_var)
@@ -165,9 +178,41 @@ tanglegram(dend1, dend2,
            main = paste("entanglement =", round(entanglement(dend_list), 2)) # paste entanglement measure between 1-0
            )
 
+## Describing the clusters
+# contributing parameters per group 
+
+# add cluster column to log-transformed and standardized dataset
+res <- dat_scale %>%
+  mutate(cluster = cut_var)
+
+clus_mean <- dat_scale %>%
+  aggregate(by = list(cut_var), 
+            FUN = mean) 
+clus_mean
+
+clus_mean <- res %>%
+  #rename(EC = EC_uS) %>%
+  # pivot_longer(cols = Ca:SO4,
+  #              names_to = "parameter",
+  #              values_to = "value") %>%
+  pivot_longer(cols = names(res)[1]:names(res)[ncol(res)-1],
+               names_to = "parameter",
+               values_to = "value") %>%
+  group_by(cluster, parameter) %>%
+  summarise(mean = mean(value))
+
+ggplot(clus_mean, aes(x = parameter, y = mean, colour = as.character(cluster), 
+                      group = as.character(cluster))) +
+  geom_line() +
+  xlab("") +
+  ylab("mean of standardized concentrations") +
+  labs(colour = "cluster") +
+  theme_bw()
+
 ###############################################################################
 # Save results
 ###############################################################################
+
 
 
 

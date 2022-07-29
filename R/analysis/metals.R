@@ -377,7 +377,11 @@ dat <- d %>%
 # log transformed concentrations
 dat_log <- d %>%
   #filter(sampletype == "groundwater") %>%
-  filter(parameter %in% metals_cor) %>%
+  filter(parameter %in% c("Al", "As", "B", "Ba", "Be",
+                          "Ca", "Co", "Cr", "Cu", "Fe",
+                          "K", "Li", "Mg", "Mn", "Mo", "Na", 
+                          "Ni", "P", "Pb", "S", "Sb", "Se",
+                          "Si", "Ti", "V", "Zn")) %>%
   mutate(logvalue = log(value)) %>%
   # select only samplecode and concentrations and convert to wide format
   select(samplecode, parameter, logvalue) %>%
@@ -438,6 +442,28 @@ table(cut_var)
 p <- fviz_cluster(list(data = dat_log, cluster = cut_var),
                   main = "Ward's method clusters of main constituents")
 p + theme_bw()
+
+## Describing the clusters
+# contributing parameters per group 
+# add cluster column to log-transformed and standardized dataset
+res <- dat_scale %>%
+  mutate(cluster = cut_var)
+# add parameter mean to each cluster
+clus_mean <- res %>%
+  pivot_longer(cols = names(res)[1]:names(res)[ncol(res)-1],
+               names_to = "parameter",
+               values_to = "value") %>%
+  group_by(cluster, parameter) %>%
+  dplyr::summarise(mean = mean(value))
+
+# visualise relative contribution parameter to each cluster
+ggplot(clus_mean, aes(x = parameter, y = mean, colour = as.character(cluster), 
+                      group = as.character(cluster))) +
+  geom_line() +
+  xlab("") +
+  ylab("mean of standardized concentrations") +
+  labs(colour = "cluster") +
+  theme_bw()
 
 #### PCA ####
 res.pca <- PCA(dat_log, graph = T, ncp = 8)

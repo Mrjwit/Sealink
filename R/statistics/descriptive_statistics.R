@@ -53,8 +53,25 @@ d <- data %>%
             max = round(max(value, na.rm = T), digits = 1),
             sd = round(sd(value, na.rm = T), digits = 1),
             skewness = round(skewness(value, na.rm = T), digits = 1)) 
+write.xlsx(d, paste0(output, "descriptive_statistics_all_samples.xlsx"))
 
-write.xlsx(d, paste0(output, "descriptive_statistics.xlsx"))
+d <- data %>%
+  filter(year == 2021, sampletype != "air", 
+         !parameter %in% c("DO_sat", "HCO3_field", "HCO3_lab", "NO2_field", "NO3_field", "P", "S"),
+         !is.na(value)) %>%
+  filter(sampletype == "groundwater") %>%
+  group_by(parameter) %>%
+  summarise(units = unique(units),
+            dl = paste(unique(detection_limit, collapse = ", ")),
+            `% <dl` = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1),
+            mean = round(mean(value, na.rm = T), digits = 1),
+            median = round(median(value, na.rm = T), digits = 1),
+            min = round(min(value, na.rm = T), digits = 1),
+            max = round(max(value, na.rm = T), digits = 1),
+            sd = round(sd(value, na.rm = T), digits = 1),
+            skewness = round(skewness(value, na.rm = T), digits = 1)) 
+
+write.xlsx(d, paste0(output, "descriptive_statistics_groundwater.xlsx"))
 
 data %>%
   filter(year == 2021, sampletype != "air", 

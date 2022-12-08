@@ -184,18 +184,18 @@ d <- data %>%
   select(samplecode, parameter, value) %>%
   pivot_wider(names_from = parameter,
               values_from = value) %>%
-  rowwise() %>% mutate(avg = mean(c(PO4_DA, PO4_IC, `PO4_ICP-MS`), na.rm = T))
+  rowwise() %>% mutate(avg = mean(c(PO4_DA, `PO4_ICP-MS`), na.rm = T)) # PO4_IC is removed
 
 # Plot PO4 from IC against DA
-ggplot(d, aes(x = PO4_DA, y = PO4_IC)) +
-  geom_point() +
-  geom_abline(intercept = 0, linetype = "dashed") +
-  geom_smooth(method = "lm") +
-  scale_x_continuous(limits = c(-0.2, 30),
-                     name = "PO4 DA [mg/l]") +
-  scale_y_continuous(limits = c(-0.2, 30),
-                     name = "PO4 IC [mg/]") +
-  theme_bw()
+# ggplot(d, aes(x = PO4_DA, y = PO4_IC)) +
+#   geom_point() +
+#   geom_abline(intercept = 0, linetype = "dashed") +
+#   geom_smooth(method = "lm") +
+#   scale_x_continuous(limits = c(-0.2, 30),
+#                      name = "PO4 DA [mg/l]") +
+#   scale_y_continuous(limits = c(-0.2, 30),
+#                      name = "PO4 IC [mg/]") +
+#   theme_bw()
 
 # Plot PO4 from ICP-MS against DA
 ggplot(d, aes(x = PO4_DA, y = `PO4_ICP-MS`)) +
@@ -208,15 +208,15 @@ ggplot(d, aes(x = PO4_DA, y = `PO4_ICP-MS`)) +
                      name = "P/PO4 ICP-MS [mg/]") +
   theme_bw()
 # Plot PO4 from IC against ICP-MS
-ggplot(d, aes(x = PO4_IC, y = `PO4_ICP-MS`)) +
-  geom_point() +
-  geom_abline(intercept = 0, linetype = "dashed") +
-  geom_smooth(method = "lm") +
-  scale_x_continuous(limits = c(-0.2, 30),
-                     name = "PO4 IC [mg/l]") +
-  scale_y_continuous(limits = c(-0.2, 30),
-                     name = "P/PO4 ICP-MS [mg/]") +
-  theme_bw()
+# ggplot(d, aes(x = PO4_IC, y = `PO4_ICP-MS`)) +
+#   geom_point() +
+#   geom_abline(intercept = 0, linetype = "dashed") +
+#   geom_smooth(method = "lm") +
+#   scale_x_continuous(limits = c(-0.2, 30),
+#                      name = "PO4 IC [mg/l]") +
+#   scale_y_continuous(limits = c(-0.2, 30),
+#                      name = "P/PO4 ICP-MS [mg/]") +
+#   theme_bw()
 
 # arranged plot for 3 PO4 methods
 d_long <- d %>%
@@ -284,7 +284,7 @@ cat <- c("Na", "Ca", "Mg", "Fe", "K", "NH4", "Mn")
 d <- data %>%
   filter(year == 2021,
          parameter %in% c(an, "EC_uS")) %>%
-  filter(!str_detect(method, "DA ")) %>%
+  #filter(!str_detect(method, "DA ")) %>%
   # change mg/l to meq/l
   mutate(meql = case_when(
     parameter == "Cl" ~ value / 35.453,
@@ -351,6 +351,16 @@ ggplot(d, aes(x = EC_calc, y = EC_uS)) +
   #                 ylim = c(0, 5000)) +
   theme_bw()
 
+ggplot(d, aes(x = sum_an, y = EC_calc)) +
+  geom_point() +
+  geom_abline(intercept = 0, linetype = "dashed") + 
+  geom_smooth(method = "loess") +
+  scale_x_continuous(name = "Sum anions [meq/l]") +
+  scale_y_continuous(name = "EC / 100 [uS/cm]") +
+  coord_cartesian(xlim = c(0, 100),
+                  ylim = c(0, 100)) +
+  theme_bw()
+
 ```
 
 ```{r}
@@ -389,8 +399,8 @@ cat <- c("Na", "Ca", "Mg", "Fe", "K", "NH4")
 d <- data %>%
   filter(year == 2021, 
          parameter %in% c(an, cat, "EC_uS")) %>%
-  filter(!str_detect(method, "PHOS"),
-         units != "mg N/L") %>%                    
+  # filter(!str_detect(method, "PHOS"),
+  #        units != "mg N/L") %>%                    
   # change mg/l to meq/l for anions
   mutate(meql = case_when(
     parameter == "Cl" ~ value / 35.453,
@@ -423,10 +433,10 @@ d <- data %>%
   mutate(check = ifelse(EB < -10 | EB > 10, "error", "good"))
 
 # save tabel
-write.xlsx(d %>% select(samplecode, Cl, HCO3, NO3, PO4, SO4, 
-                        Na, Ca, Mg, Fe, K, NH4, 
-                        sum_an, sum_cat, EC_uS, EC_100, EB, check),
-           paste0(output, "ionic_balance.xlsx"))
+# write.xlsx(d %>% select(samplecode, Cl, HCO3, NO3, PO4, SO4, 
+#                         Na, Ca, Mg, Fe, K, NH4, 
+#                         sum_an, sum_cat, EC_uS, EC_100, EB, check),
+#            paste0(output, "ionic_balance.xlsx"))
   
 ggplot(d, aes(x = sum_an, y = sum_cat, colour = check)) + 
   geom_point() +
@@ -559,7 +569,7 @@ d <- data %>%
   filter(year == 2021) %>%
   filter(parameter %in% c("Br", "Cl"),
          units == "mg/l") %>%
-  select(samplecode, parameter, value, watertype) %>%
+  select(samplecode, parameter, value, sampletype) %>%
   pivot_wider(names_from = parameter,
               values_from = value) %>%
   mutate(`Cl/Br` = Cl / Br)
@@ -586,9 +596,8 @@ ggplot(d, aes(x = Cl, y = `Cl/Br`)) +
 # check dl of NH4 and PO4
 ```{r}
 d <- data %>%
-  filter(method == "DA",
-         units %in% c("mg N/L ", "mg P/L ")) %>%
-  mutate(detection_limit = ifelse(parameter == "NH4", 0.2,
+  filter(method == "DA") %>%
+  mutate(detection_limit = ifelse(parameter == "NH4", 0.2, # these values are based on mg N/L!  
                                   0.027)) %>%
   mutate(below = ifelse(value < detection_limit, 1, 0)) 
 
@@ -622,7 +631,7 @@ d %>%
 d <- data %>%
   filter(parameter %in% c("NO3", "NH4"),
          units == "mg/l") %>%
-  select(samplecode, parameter, value, watertype) %>%
+  select(samplecode, parameter, value, sampletype) %>%
   pivot_wider(names_from = parameter,
               values_from = value) 
 
@@ -640,7 +649,7 @@ ggplot(d, aes(x = NO3, y = NH4)) +
 d <- data %>%
   filter(year == 2021,
          parameter == "Rn",
-         watertype == "groundwater")
+         sampletype == "groundwater")
 
 sample_size <- d %>%
   group_by(parameter) %>% summarise(num = n())
@@ -681,10 +690,10 @@ plot_grid(p1, p2, labels = "AUTO")
 d <- data %>%
   filter(parameter == "Rn")
 sample_size <- d %>%
-  group_by(watertype) %>% summarise(num = n())
+  group_by(sampletype) %>% summarise(num = n())
 d %>%
   left_join(sample_size) %>%
-  mutate(myaxis = paste0(watertype, "\n", "n=", num)) %>%
+  mutate(myaxis = paste0(sampletype, "\n", "n=", num)) %>%
   ggplot(aes(x = myaxis, y = value)) +
     stat_boxplot(geom = "errorbar", width = 0.4) +
     #geom_violin(width = 1.4) +
@@ -982,14 +991,15 @@ ggplot(d %>%
         #axis.text.x = element_blank(),
         legend.title = element_blank()) +
   facet_wrap(~parameter, scales = "free")
-ggsave(file = paste0(output, "Output/Figures/Checks/detection_limits/metals_detectionlimits_no_outliers.pdf"), 
-       width = 210, height = 297, units = "mm")
+# ggsave(file = paste0(output, "Output/Figures/Checks/detection_limits/metals_detectionlimits_no_outliers.pdf"), 
+#        width = 210, height = 297, units = "mm")
 
 # Plot dl against EC per element to see what causes changes in dl
 # Per individual element without outliers with nr
 el_icp <- data %>% filter(method == "ICP-MS") %>% distinct(parameter)
 
 d <- data %>%
+  filter(year == 2021) %>%
   filter(parameter %in% c(el_icp$parameter, "EC_uS"),
          parameter != "Mg26") %>%
   group_by(samplecode) %>%
@@ -1015,8 +1025,8 @@ ggplot(d %>%
         #axis.text.x = element_blank(),
         legend.title = element_blank()) +
   facet_wrap(~parameter, scales = "free")
-ggsave(file = paste0(output, "Output/Figures/Checks/detection_limits/metals_VS_EC.pdf"), 
-       width = 210, height = 297, units = "mm")
+# ggsave(file = paste0(output, "Output/Figures/Checks/detection_limits/metals_VS_EC.pdf"), 
+#        width = 210, height = 297, units = "mm")
 
 
 pgrid <- plot_grid(p1, p2, labels = "AUTO")
@@ -1214,7 +1224,7 @@ d_an_wide <- data %>%
   pivot_wider(names_from = parameter,
               values_from = value) 
 
-write.xlsx(data, paste0(output, "Clean_data/dataset_hydrochemistry_2021.xlsx"))
-write.xlsx(d_an_wide, paste0(output, "Clean_data/anions_wide_2021.xlsx"))
+# write.xlsx(data, paste0(output, "Clean_data/dataset_hydrochemistry_2021.xlsx"))
+# write.xlsx(d_an_wide, paste0(output, "Clean_data/anions_wide_2021.xlsx"))
 ```
 

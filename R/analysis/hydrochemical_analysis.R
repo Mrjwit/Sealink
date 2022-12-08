@@ -60,8 +60,6 @@ d <- data %>%
     Cl >= 3000 & Cl < 21000 ~ "saline",
     TRUE ~ "hypersaline" ))
   
-  
-
 #putcodes # 233 in 1977, 95 in 1992              170 uit 1977 niet in 1992 (63 wel), 32 uit 1992 niet in 1977 (63 wel)
 setdiff(data %>% filter(year == 1992) %>% select(putcode) %>% distinct(),
         data %>% filter(year == 1977) %>% select(putcode) %>% distinct())
@@ -179,7 +177,7 @@ d_zonalmap <- d_zonalmap %>%
                names_to = "type",
                values_to = "percentage")
 
-# plot 
+# plot  nr samples per land use type
 ggplot(d_zonalmap, 
        aes(x = landuse_zonal_map, y = percentage, fill = type)) +
   geom_col(position = "dodge") +
@@ -187,6 +185,36 @@ ggplot(d_zonalmap,
   scale_y_continuous(name = "relative contribution") +
   theme_bw()
 
+## overview of # groundwater samples per geology per year
+d <- tibble(Geology = c("CLF East", "CLF West", "KG", "CMF", "L"),
+            Area = c(34.0, 20.0, 10.6, 8.1, 27.4),
+            `2021` = c(55.7, 17.7, 8.9, 13.9, 3.8),
+            `1992` = c(51.5, 21.6, 6.2, 17.5, 3.1),
+            `1977` = c(57.5, 21.0, 5.6, 8.2, 7.7)) %>%
+  pivot_longer(cols = Area:`1977`,
+               names_to = "var",
+               values_to = "percentage") %>%
+  mutate(var = fct_relevel(var,
+                           "Area", "2021", "1992", "1977"))
+
+ggplot(d, aes(x = Geology, y = percentage, fill = var)) +
+  geom_col(position = "dodge", alpha =.8, width = .8) +
+  geom_text(aes(label = percentage), position = position_dodge(width = 0.8), vjust = -0.5) +
+  scale_y_continuous("percentage (%)") +
+  scale_fill_discrete("") +
+  theme_bw() +
+  theme(legend.position = c(.9, .87))
+
+ggplot(d, aes(x = percentage, y = Geology, fill = var)) +
+  geom_col(position = "dodge", alpha = 0.8, width = 0.8) +
+  geom_text(aes(label = percentage), position = position_dodge(width = 0.8), hjust = 1.25) +
+  scale_x_continuous("percentage (%)") +
+  scale_fill_discrete("") +
+  theme_bw() +
+  theme(legend.position = c(0.9, 0.8))
+
+ggsave("C:/Users/mikewit/Documents/SEALINK/Data/Output/Figures/Sampling/groundwatersamples_per_geology.png",
+       width = 8, height = 4)
 
 ###############################################################################
 # Data analysis
@@ -200,6 +228,10 @@ d <- data %>%
                            "GW053A", "GW053B", "GW055A", "GW055B", 
                            "GW060A", "GW060B")) %>%
   mutate(putcode = substr(samplecode, 1, 5)) 
+
+d <- data %>%
+  filter(year == 2021, sampletype == "groundwater", parameter %in% c("DO", "DO_sat"))
+
 # add metadata from well depth and sample depth
 d <- d %>%
   left_join(., metadata %>% select(samplecode, Well.type, `Inner.well.diameter.(m)`, 
@@ -224,6 +256,17 @@ d <- d %>%
     samplecode == "GW060B" ~ "top",
     TRUE ~ "Other" )) %>%
   ungroup()
+
+d %>%
+  filter(parameter == "DO") %>%
+  group_by(Well.type) %>%
+  summarise(min = min(value, na.rm = T),
+            max = max(value, na.rm = T),
+            avg = mean(value, na.rm = T),
+            median = median(value, na.rm = T))
+
+ggplot(d %>% filter(parameter == "DO"), aes(x = Well.type, y = value)) +
+  geom_boxplot()
 
 d %>% select(putcode, samplecode, Well.type, `Inner.well.diameter.(m)`, 
              `Well.depth.below.surface.(m)`, `Depth.of.well.owner.(m)`,
@@ -510,17 +553,22 @@ ggplot_piper <- function(piper.data, output = c("ggplot","plotly"), scale = samp
 
 # Make piper diagram with different versions using geology, EC and watertype
 ggplot_piper(piper.data, output = "ggplot", scale = "sampletype")
-ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_sampletype.png"))
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_sampletype.png"),
+       width = 6, height = 6)
 ggplot_piper(piper.data, output = "ggplot", scale = "geology")
-ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_geology.png"))
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_geology.png"),
+       width = 6, height = 6)
 ggplot_piper(piper.data, output = "ggplot", scale = "EC")
-ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_EC.png"))
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_EC.png"),
+       width = 6, height = 6)
 
 # just groundwater
 ggplot_piper(piper.data %>% filter(sampletype == "groundwater"), output = "ggplot", scale = "geology")
-ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_groundwater_per_geology.png"))
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_groundwater_per_geology.png"),
+       width = 6, height = 6)
 ggplot_piper(piper.data %>% filter(sampletype == "groundwater"), output = "ggplot", scale = "EC")
-ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_groundwater_per_EC.png"))
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_groundwater_per_EC.png"),
+       width = 6, height = 6)
 
 #### Stiff diagram ####
 an <- c("Cl", "HCO3", "NO3", "PO4", "SO4")

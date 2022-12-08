@@ -49,7 +49,7 @@ metals <- c("Ag", "Al", "As", "B", "Ba", "Be", "Ca", "Cd", "Co", "Cr", "Cu", "Fe
             "Li", "Mg", "Mn", "Mo", "Na", "Ni", "Pb", "Sb", "Se", "Si", "Ti", "V", "Zn")
 
 # create empty workbook
-#wb <- createWorkbook()
+wb <- createWorkbook()
 
 # Total overview all metals in all sample types and including values < dl
 d1 <- data %>%
@@ -57,17 +57,17 @@ d1 <- data %>%
 mutate(parameter = paste0(parameter, " [", units, "]")) %>%
   group_by(parameter) %>%
   summarise(n=n(),
-            '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
-            min = min(value, na.rm = T),
-            p10 = round(quantile(value, 0.1, na.rm = T), digits = 2),
-            p50 = round(quantile(value, 0.5, na.rm = T), digits = 2),
-            avg = round(mean(value, na.rm = T), digits = 2),
-            p90 = round(quantile(value, 0.9, na.rm = T), digits = 2),
-            max = round(max(value, na.rm = T), digits = 2),
             dl = paste(unique(detection_limit), collapse = ", "),
+            '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
+            mean = round(mean(value, na.rm = T), digits = 1),
+            median = round(quantile(value, 0.5, na.rm = T), digits = 1),
+            min = round(min(value, na.rm = T), digits = 1),
+            max = round(max(value, na.rm = T), digits = 1),
+            sd = round(sd(value, na.rm = T), digits = 1),
+            skewness = round(skewness(value, na.rm = T), digits = 1), 
             method = paste(unique(method), collapse = ", ")) 
-#addWorksheet(wb, "2021 incl <dl")
-#writeData(wb, "2021 incl <dl", d1)
+addWorksheet(wb, "2021 incl <dl")
+writeData(wb, "2021 incl <dl", d1)
 
 # only values > dl in all sample types
 d1 <- data %>%
@@ -75,17 +75,17 @@ d1 <- data %>%
   mutate(parameter = paste0(parameter, " [", units, "]")) %>%
   group_by(parameter) %>%
   summarise(n=n(),
-            '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
-            min = min(value, na.rm = T),
-            p10 = quantile(value, 0.1, na.rm = T),
-            p50 = quantile(value, 0.5, na.rm = T),
-            avg = mean(value, na.rm = T),
-            p90 = quantile(value, 0.9, na.rm = T),
-            max = max(value, na.rm = T),
             dl = paste(unique(detection_limit), collapse = ", "),
+            '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
+            mean = round(mean(value, na.rm = T), digits = 1),
+            median = round(quantile(value, 0.5, na.rm = T), digits = 1),
+            min = round(min(value, na.rm = T), digits = 1),
+            max = round(max(value, na.rm = T), digits = 1),
+            sd = round(sd(value, na.rm = T), digits = 1),
+            skewness = round(skewness(value, na.rm = T), digits = 1), 
             method = paste(unique(method), collapse = ", ")) 
-#addWorksheet(wb, "2021 excl <dl")
-#writeData(wb, "2021 excl <dl", d1)
+addWorksheet(wb, "2021 excl <dl")
+writeData(wb, "2021 excl <dl", d1)
 
 # only values < dl in all sample types
 d1 <- data %>%
@@ -93,17 +93,17 @@ d1 <- data %>%
   mutate(parameter = paste0(parameter, " [", units, "]")) %>%
   group_by(parameter) %>%
   summarise(n=n(),
-            '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
-            min = min(value, na.rm = T),
-            p10 = quantile(value, 0.1, na.rm = T),
-            p50 = quantile(value, 0.5, na.rm = T),
-            avg = mean(value, na.rm = T),
-            p90 = quantile(value, 0.9, na.rm = T),
-            max = max(value, na.rm = T),
             dl = paste(unique(detection_limit), collapse = ", "),
+            '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
+            mean = round(mean(value, na.rm = T), digits = 1),
+            median = round(quantile(value, 0.5, na.rm = T), digits = 1),
+            min = round(min(value, na.rm = T), digits = 1),
+            max = round(max(value, na.rm = T), digits = 1),
+            sd = round(sd(value, na.rm = T), digits = 1),
+            skewness = round(skewness(value, na.rm = T), digits = 1), 
             method = paste(unique(method), collapse = ", ")) 
-#addWorksheet(wb, "2021 only <dl")
-#writeData(wb, "2021 only <dl", d1)
+addWorksheet(wb, "2021 only <dl")
+writeData(wb, "2021 only <dl", d1)
 
 # only groundwater samples
 d1 <- data %>%
@@ -111,17 +111,17 @@ d1 <- data %>%
   mutate(parameter = paste0(parameter, " [", units, "]")) %>%
   group_by(parameter) %>%
   summarise(n=n(),
-            '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
-            min = min(value, na.rm = T),
-            p10 = quantile(value, 0.1, na.rm = T),
-            p50 = quantile(value, 0.5, na.rm = T),
-            avg = mean(value, na.rm = T),
-            p90 = quantile(value, 0.9, na.rm = T),
-            max = max(value, na.rm = T),
             dl = paste(unique(detection_limit), collapse = ", "),
-            method = paste(unique(method), collapse = ", ")) 
-#addWorksheet(wb, "2021 gw")
-#writeData(wb, "2021 gw", d1)
+            '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
+            mean = round(mean(value, na.rm = T), digits = 1),
+            median = round(quantile(value, 0.5, na.rm = T), digits = 1),
+            min = round(min(value, na.rm = T), digits = 1),
+            max = round(max(value, na.rm = T), digits = 1),
+            sd = round(sd(value, na.rm = T), digits = 1),
+            skewness = round(skewness(value, na.rm = T), digits = 1), 
+            method = paste(unique(method), collapse = ", "))  
+addWorksheet(wb, "2021 gw")
+writeData(wb, "2021 gw", d1)
 
 # only groundwater but for all years (1977, 1992, 2021) 
 d1 <- data %>%
@@ -136,25 +136,25 @@ d1 <- data %>%
   mutate(parameter = paste0(parameter, " [", units, "]")) %>%
   group_by(parameter) %>%
   summarise(n=n(),
+            dl = paste(unique(detection_limit), collapse = ", "),
             '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
-            min = min(value, na.rm = T),
-            p10 = quantile(value, 0.1, na.rm = T),
-            p50 = quantile(value, 0.5, na.rm = T),
-            avg = mean(value, na.rm = T),
-            p90 = quantile(value, 0.9, na.rm = T),
-            max = max(value, na.rm = T),
-            dl = paste(sort(unique(detection_limit)), collapse = ", "),
+            mean = round(mean(value, na.rm = T), digits = 1),
+            median = round(quantile(value, 0.5, na.rm = T), digits = 1),
+            min = round(min(value, na.rm = T), digits = 1),
+            max = round(max(value, na.rm = T), digits = 1),
+            sd = round(sd(value, na.rm = T), digits = 1),
+            skewness = round(skewness(value, na.rm = T), digits = 1), 
             method = paste(unique(method), collapse = ", ")) 
-#addWorksheet(wb, "all years gw")
-#writeData(wb, "all years gw", d1)
+addWorksheet(wb, "all years gw")
+writeData(wb, "all years gw", d1)
 
 # # save excel workbook
-# freezePane(wb, sheet = 1, firstRow = T)
-# freezePane(wb, sheet = 2, firstRow = T)
-# freezePane(wb, sheet = 3, firstRow = T)
-# freezePane(wb, sheet = 4, firstRow = T)
-# freezePane(wb, sheet = 5, firstRow = T)
-# saveWorkbook(wb, file = paste0(output, "metals_statistics.xlsx"), overwrite = T)
+freezePane(wb, sheet = 1, firstRow = T)
+freezePane(wb, sheet = 2, firstRow = T)
+freezePane(wb, sheet = 3, firstRow = T)
+freezePane(wb, sheet = 4, firstRow = T)
+freezePane(wb, sheet = 5, firstRow = T)
+saveWorkbook(wb, file = paste0(output, "metals_statistics.xlsx"), overwrite = T)
 
 ###############################################################################
 # Editing data

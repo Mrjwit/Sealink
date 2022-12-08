@@ -42,9 +42,9 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/Output/Statistics/HCA"
 ###############################################################################
 
 ## Select relevant parameters to include in cluster analysis
-# Basic parameters
-set <- c("pH", "EC_uS", "Na", "Ca", "K", "Fe", "Mg", "Si", "NH4", 
-         "Cl", "HCO3", "SO4", "NO3", "PO4")
+# Basic parameters, remove EC? 
+set <- c("pH", "DO", "Na", "Ca", "Mg", "K", "Si", "Fe", "Mn", "NH4", 
+         "Cl", "HCO3", "SO4", "NO3", "PO4", "Br")
 
 # metals excluding Ag and Cd as they are all <dl
 metals <- c("Al", "As", "B", "Ba", "Be", "Ca", "Co", "Cr", "Cu", "Fe", "K", "Li", 
@@ -55,11 +55,44 @@ avoid <- c("NO2_field", "NO3_field", "Eh", "DO_sat",
            "HCO3_field", "HCO3_lab", "Rn", "Ag", "Cd",
            "P", "S")
 
-# select only 2021 and select relevant parameters from above
+# add DO for GW021 and RW002 and Mn for SEA001
 d <- data %>%
+  # use average DO+pH concentration of RW001 and RW003 for RW002
+  mutate(value = ifelse(samplecode == "RW002" & parameter == "DO", 7.517, value)) %>%
+  mutate(value = ifelse(samplecode == "RW002" & parameter == "pH", 6.3, value)) %>%
+  # use Mn concentration from SEA002 for SEA001
+  mutate(value = ifelse(samplecode == "SEA001" & parameter == "Mn", 1.82, value)) %>%
+  # use average DO+pH concentration from KG geology
+  mutate(value = ifelse(samplecode == "GW021" & parameter == "DO", 2.31, value)) %>%
+  mutate(value = ifelse(samplecode == "GW021" & parameter == "pH", 7.10, value))
+
+# select only 2021 and select relevant parameters from above
+d <- d %>%
   filter(year == 2021, 
          !is.na(value),
-         parameter %in% set) 
+         parameter %in% set) %>%
+  select(samplecode, parameter, value)
+
+# average values for locations with 2 samples on the same location
+d_set <- d %>%
+  filter(samplecode %in% c("GW014A", "GW014B", "GW020A", "GW020B", "GW035A", "GW035B", 
+                           "GW040A", "GW040B", "GW053A", "GW053B", "GW055A", "GW055B", 
+                           "GW060A", "GW060B")) %>%
+  mutate(code = str_sub(samplecode, -1)) %>%
+  mutate(samplecode = str_sub(samplecode, start = 1, end = 5)) %>%
+  select(samplecode, code, parameter, value) %>%
+  pivot_wider(names_from = code,
+              names_glue = "{.value}_{code}",
+              values_from = c(value)) %>%
+  mutate(value = (value_A + value_B) / 2) %>%
+  select(samplecode, parameter, value)
+
+# combine averaged concentrations with dataset
+d <- d %>%
+  filter(!samplecode %in% c("GW014A", "GW014B", "GW020A", "GW020B", "GW035A", "GW035B", 
+                            "GW040A", "GW040B", "GW053A", "GW053B", "GW055A", "GW055B", 
+                            "GW060A", "GW060B")) %>%
+  rbind(., d_set)
 
 # add geology and land use
 d <- d %>%
@@ -67,7 +100,7 @@ d <- d %>%
                                    landuse_zonal_map, Land.use.based.on.own.observations))
 
 # place values in wide format for distance matrix
-dat <- d %>%
+dat_log <- d %>%
   # only for groundwater
   #filter(sampletype == "groundwater") %>%
   # filter(!parameter %in% avoid,
@@ -75,7 +108,7 @@ dat <- d %>%
   # mutate(value = ifelse(parameter %in% c("E.coli", "DO"), value + 1, value)) %>%
   # log transform values due to non normal distribution ?
   # pH and isotopes should not be log transformed
-  mutate(sel = ifelse(parameter == "pH" | method == "IA", 1, 0)) %>%
+  mutate(sel = ifelse(parameter %in% c("pH", "DO", "Si", "NO3"), 1, 0)) %>%
   #filter(sel == 0) %>%
   mutate(logvalue = ifelse(sel == 1, value, log(value))) %>%
   # select only samplecode and concentrations and convert to wide format
@@ -86,9 +119,26 @@ dat <- d %>%
   pivot_wider(names_from = parameter,
               values_from = logvalue) %>%
   # set samplecodes as row names/index
-  column_to_rownames(., var = "samplecode") %>%
+  column_to_rownames(., var = "samplecode") 
   # remove NA's
-  drop_na()
+  #drop_na()
+
+dat <- d %>%
+  # only for groundwater
+  #filter(sampletype == "groundwater") %>%
+  # filter(!parameter %in% avoid,
+  #        method != "IA") %>%
+  # mutate(value = ifelse(parameter %in% c("E.coli", "DO"), value + 1, value)) %>%
+  # select only samplecode and concentrations and convert to wide format
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  # set samplecodes as row names/index
+  column_to_rownames(., var = "samplecode") 
+# remove NA's
+#drop_na()
+
+
 
 ###############################################################################
 # Hierarchical Cluster Analysis
@@ -101,7 +151,7 @@ dat <- d %>%
 # using Z-scores to standardize the data, leading to a mean of 0 and sd of 1.
 
 # scale all columns to unit variance
-dat_scale <- as.data.frame(scale(dat))
+dat_scale <- as.data.frame(scale(dat_log))
 
 # build distance matrix / dissimilarity values
 dist_mat <- dist(dat_scale, method = "euclidean")
@@ -134,15 +184,39 @@ hclust_avg <- hclust(dist_mat, method = "average")
 hclust_var <- hclust(dist_mat, method = "ward.D")
 # standard plot dendrogram
 plot(hclust_var, cex = 0.7, hang = -1,
-     main = "HCA Ward's method", sub = NA, xlab = NA)
+     main = "HCA Ward's method", sub = NA, xlab = NA) 
+
+# plot with dendextend
+dend <- as.dendrogram(hclust_var)
+dend %>%
+  set("labels_col", value = c("skyblue", "orange", "grey", "#7CAE00"), k=4) %>%
+  set("branches_k_color", value = c("skyblue", "orange", "grey", "#7CAE00"), k = 4) %>%
+  plot(horiz=TRUE)
+abline(v = 18, lty = 2)
+
+# Used!! 
+png(paste0(output, "/HCA_allsamples_4clusters.png"),
+    width = 960, height = 480)
+dend %>%
+  # 4 clusters
+  # set("labels_col", value = c("skyblue", "orange", "grey", "#7CAE00", "#F8766D"), k =4) %>%
+  # set("branches_k_color", value = c("skyblue", "orange", "grey", "#7CAE00", "#F8766D"), k = 4) %>%
+  # 7 subclusters
+  set("labels_col", value = c("skyblue", "orange", "darkorange3", "grey", "azure4", "#7CAE00", "forestgreen", "#F8766D"), k = 7) %>%
+  set("branches_k_color", value = c("skyblue", "orange", "darkorange3",  "grey", "azure4", "#7CAE00", "forestgreen", "#F8766D"), k = 7) %>%
+  plot()
+abline(h = 25, lty = 2)
+abline(h = 13, lty = 2)
+dev.off()
+
 # clusters for main constituents 
 # colours
 # colour blind friendly:
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 # default ggplot colours:
-hex_codes <- hue_pal()(5) # show_col(hex_codes) shows colours + codes
+hex_codes <- hue_pal()(4) # show_col(hex_codes) shows colours + codes
 abline(h = 16, col = "red", lty = "dashed")
-rect.hclust(hclust_var, k = 5, border = c("#00BF7D", "#00B0F6", "#A3A500", "#E76BF3", "#F8766D"))
+rect.hclust(hclust_var, k = 4, border = c("#00BF7D", "#00B0F6", "#A3A500", "#E76BF3", "#F8766D"))
 # abline(h = 12, col = "green", lty = "dashed")
 # rect.hclust(hclust_var, k = 6, border = 2:6)
 
@@ -157,7 +231,8 @@ rect.hclust(hclust_var, k = 5, border = c("#00BF7D", "#00B0F6", "#A3A500", "#E76
 
 ## Checking clusters
 # cut dendrogram into clusters
-cut_var <- cutree(hclust_var, k = 5)
+cut_var <- cutree(hclust_var, k = 4) 
+cut_subvar <- cutree(hclust_var, k = 7)
 table(cut_var)
 
 # visualise clusters in scatter plot (similar to PCA?)
@@ -208,6 +283,86 @@ ggplot(clus_mean, aes(x = parameter, y = mean, colour = as.character(cluster),
   ylab("mean of standardized concentrations") +
   labs(colour = "cluster") +
   theme_bw()
+
+# alternatively, add clusters to dataset of original concentrations and make 
+# table with means per cluster per parameter
+clus_mean <- dat %>%
+  aggregate(by = list(cut_var), 
+            FUN = mean) 
+
+d <- dat %>%
+  cbind(samplecode = rownames(.)) %>%
+  left_join(data %>% filter(year == 2021, parameter == "EC_uS") %>% select(samplecode, value)) %>%
+  rename(EC = value) %>%
+  select(samplecode, everything())
+
+res <- d %>%
+  mutate(x = cut_var) %>%
+  mutate(xsub = cut_subvar) %>%
+  # adjust cluster numbers to match dendrogram order
+  mutate(cluster = case_when(
+    x == 1 ~ 2,
+    x == 2 ~ 4,
+    x == 3 ~ 3,
+    x == 4 ~ 1,
+    TRUE ~ 99)) %>%
+  # adjust subcluster numbers to match dendrogram order
+  mutate(subcluster = case_when(
+    xsub == 1 ~ "2A",
+    xsub == 2 ~ "4B",
+    xsub == 3 ~ "3B",
+    xsub == 4 ~ "4A",
+    xsub == 5 ~ "2B",
+    xsub == 6 ~ "1",
+    xsub == 7 ~ "3A",
+    TRUE ~ "99")) %>%
+  select(-c(x, xsub)) %>%
+  # put into long format to perform analysis
+  pivot_longer(cols = Br:EC,
+               names_to = "parameter",
+               values_to = "value") %>%
+  # add EC values for missing samples
+  mutate(value = case_when(
+    samplecode == "GW014" & parameter == "EC" ~ 2386,
+    samplecode == "GW020" & parameter == "EC" ~ 5639,
+    samplecode == "GW035" & parameter == "EC" ~ 4565,
+    samplecode == "GW040" & parameter == "EC" ~ 1682,
+    samplecode == "GW053" & parameter == "EC" ~ 5710,
+    samplecode == "GW055" & parameter == "EC" ~ 2630,
+    samplecode == "GW060" & parameter == "EC" ~ 1291,
+    samplecode == "RW002" & parameter == "EC" ~ 92, 
+    TRUE ~ value))
+
+clus_mean <- res %>%
+  group_by(cluster, parameter) %>%
+  summarise(n=n(),
+            mean = mean(value)) %>%
+  pivot_wider(names_from = parameter,
+              values_from = mean)
+write.xlsx(clus_mean, paste0(output, "/cluster_mean.xlsx"))
+
+subcluster_mean <- res %>%
+  group_by(subcluster, parameter) %>%
+  summarise(n=n(),
+            mean = mean(value)) %>%
+  pivot_wider(names_from = parameter,
+              values_from = mean)
+write.xlsx(subcluster_mean, paste0(output, "/subcluster_mean.xlsx"))
+  
+ggplot(res, aes(x = parameter, y = mean, fill = as.character(cluster))) + 
+  geom_col(position = "dodge") 
+  facet_wrap(facets = "cluster", scales = "free")
+
+# export dataset with coordinates and clusters to visualize on GIS map
+d <- res %>%
+  pivot_wider(names_from = parameter) %>%
+  left_join(metadata %>% 
+              select(samplecode, xcoord, ycoord) %>%
+              mutate(samplecode = ifelse(samplecode %in% c("SEA001", "SEA002", "SW003A", "SW003B"), 
+                                         samplecode, str_sub(samplecode, start = 1, end = 5))) %>%
+              distinct()) 
+
+write.csv(d, paste0(output, "/clusters_hydrochemical2021.csv"))
 
 ###############################################################################
 # Save results

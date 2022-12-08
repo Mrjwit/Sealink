@@ -251,7 +251,7 @@ ggplot(d_wide %>% filter(sampletype != "demi-water"), aes(x = `d18O`, y = `d2H`)
   #                     guide = guide_legend(
   #                       override.aes = list(pch = c(NA, NA, NA, 16, 16, 16), linetype = c(2, 2, 2, 0, 0, 0))
   #                     )) +
-  scale_colour_manual(name = "", values = c("red", "lightblue", "purple", "steelblue", "orange", "purple"),
+  scale_colour_manual(name = "", values = c("black", "#619CFF", "#F8766D", "#00BA38", "#619CFF", "#F8766D"),
                      breaks = c("GMWL", "LMWL?", "TWML", "groundwater", "surface runoff", "tapwater"),
                      guide = guide_legend(
                        override.aes = list(pch = c(NA, NA, NA, 16, 16, 16), linetype = c(2, 2, 2, 0, 0, 0))
@@ -260,14 +260,17 @@ ggplot(d_wide %>% filter(sampletype != "demi-water"), aes(x = `d18O`, y = `d2H`)
   scale_y_continuous(name = expression(paste(delta ^{2}, "H", "(\u2030)", " vs VSMOW"))) +
   coord_cartesian(xlim = c(-3.1, 1.76),
                   ylim = c(-20, 15)) +
-  theme_bw()
+  theme_bw() + 
+  theme(legend.position = c(0.2, 0.75))
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/isotopes_incomplete.png"),
+       width = 5, height = 5)
 
 ###############################################################################
 # save data
 ###############################################################################
 
 write.xlsx(d1, paste0(output, "Clean_data/isotopes_clean.xlsx"))
-
+write.xlsx(d_wide, paste0(output, "Clean_data/isotopes_wide_incomplete.xlsx"))
 
 
 

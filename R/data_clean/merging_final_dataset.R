@@ -37,6 +37,7 @@ radon <- openxlsx::read.xlsx(paste0(input, "radon_clean.xlsx"))
 labdata <- openxlsx::read.xlsx(paste0(input, "lab_data_long.xlsx"))
 isotopes <- openxlsx::read.xlsx(paste0(input, "isotopes_clean.xlsx"))
 metadata <- openxlsx::read.xlsx(paste0(input, "survey_clean.xlsx"))
+DOC <- openxlsx::read.xlsx(paste0(input, "DOC_clean.xlsx"))
 
 # load dataset of Jessie (2020-2021)
 #
@@ -80,7 +81,8 @@ d <- metadata %>%
 
 # Merge all cleaned datasets but keep metadata separated for now, # Remove units mg N/L and mg P/L
 data <- rbind(labdata, 
-              alk %>% filter(units == "mg/l"), ecoli, radon, d, isotopes %>% select(-std)) %>%
+              alk %>% filter(units == "mg/l"), 
+              ecoli, radon, d, isotopes, DOC) %>%
   arrange(samplecode, parameter) %>%
   mutate(watercode = substr(samplecode, start = 1, stop = 2)) %>%
   # Remove units mg N/L and mg P/L, for PO4 only select DA analysis

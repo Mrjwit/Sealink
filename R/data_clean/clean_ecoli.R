@@ -19,8 +19,7 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, openxlsx, ggmap, 
-               sf, leaflet, data.table, cowplot, data.table)
+pacman::p_load(tidyverse, openxlsx)
 
 ###############################################################################
 # load data
@@ -87,8 +86,9 @@ d <- d %>%
   # add columns that are present in other dataset to merge later
   mutate(limit_symbol = "",
          detection_limit = NA,
+         sd = NA,
          method = "Petrifilm plate") %>%
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes) %>%
+  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) %>%
   arrange(samplecode)
   
 # Check if every sample has only 1 value

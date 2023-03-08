@@ -19,10 +19,7 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-#pacman::p_load(tidyverse, dplyr, ggplot2, openxlsx, readr, ggmap, 
-#               sf, tmap, tmaptools, leaflet)
-pacman::p_load(tidyverse, openxlsx, ggmap, 
-               sf, leaflet, data.table, cowplot, data.table)
+pacman::p_load(tidyverse, openxlsx)
 
 ###############################################################################
 # load data
@@ -49,7 +46,8 @@ d <- alk %>%
   # add parameter column with HCO3
   mutate(parameter = "HCO3",
          `C.[meq/l]` = as.numeric(`C.[meq/l]`),
-         `C.[mg/l]` = as.numeric(`C.[mg/l]`)) %>%
+         `C.[mg/l]` = as.numeric(`C.[mg/l]`),
+         mmol = as.numeric(mmol)) %>%
   # rename columns
   rename(samplecode = Sample.code,
          "mg/l" = `C.[mg/l]`,
@@ -62,9 +60,10 @@ d <- alk %>%
   # add limit symbol, detection limit column and method
   mutate(limit_symbol = "",
          detection_limit = NA,
+         sd = NA,
          method = "Field titration") %>%
   # select only relevant columns 
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes) 
+  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) 
 
 # Check if every sample has only 1 value
 check <- d %>%
@@ -77,7 +76,6 @@ if(nrow(check) > 0) {
 }
 
 # Check if every sample has a value for alkalinity 
-#...
 
 
 # 

@@ -19,8 +19,7 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, openxlsx, ggmap, 
-               sf, leaflet, data.table, cowplot, data.table)
+pacman::p_load(tidyverse, openxlsx)
 
 ###############################################################################
 # load data
@@ -101,20 +100,20 @@ ggplot(d2H, aes(x = waarde1, y = waarde2)) +
 
 # 18O
 # there are sometimes 3 values
-# first: filter out the values where no std are present (these values are based on 1 measurement)
-# second: filter out the values with the highest std?
+# first: filter out the values where no sd are present (these values are based on 1 measurement)
+# second: filter out the values with the highest sd?
 # second: filter out the values based on the lowest amount of values (normally 5)
 d18O <- oxygen18 %>%
   rename(samplecode = Sample.ID,
          parameter = Isotope,
          value = MeanDeltaOfInjs,
-         std = StdDevOfDeltaOfInjs) %>%
-  select(samplecode, parameter, value, std) %>%
+         sd = StdDevOfDeltaOfInjs) %>%
+  select(samplecode, parameter, value, sd) %>%
   group_by(samplecode) %>%
-  filter(!is.na(std)) %>%
+  filter(!is.na(sd)) %>%
   mutate(namen = paste0("waarde", row_number())) %>%
   ungroup() %>%
-  select(-std) %>%
+  select(-sd) %>%
   pivot_wider(names_from = namen,
               values_from = value)
 
@@ -133,46 +132,46 @@ d2H <- deuterium %>%
   rename(samplecode = Sample.ID,
          parameter = Isotope,
          value = MeanDeltaOfAnalyses,
-         Std = StdDevOfDeltaOfInjs) %>%
-  select(samplecode, parameter, value, Std) %>%
-  # get average of std of 2 sets of 5 injections per sample
+         sd = StdDevOfDeltaOfInjs) %>%
+  select(samplecode, parameter, value, sd) %>%
+  # get average of sd of 2 sets of 5 injections per sample
   group_by(samplecode) %>%
-  filter(!is.na(Std)) %>%
-  mutate(namen = paste0("Std", row_number())) %>%
+  filter(!is.na(sd)) %>%
+  mutate(namen = paste0("sd", row_number())) %>%
   ungroup() %>%
   pivot_wider(names_from = namen,
-              values_from = Std) %>%
-  mutate(std = rowMeans(select(., 4:ncol(.)), na.rm=T) %>% round(digits = 2),
+              values_from = sd) %>%
+  mutate(sd = rowMeans(select(., 4:ncol(.)), na.rm=T) %>% round(digits = 2),
          limit_symbol = "",
          detection_limit = NA,
          units = "‰",
          method = "IA",
          notes = ifelse(is.na(value), "Value is ignored after analysis", "")) %>%
   # select relevant columns and put in right format
-  select(samplecode, parameter, value, std, limit_symbol, detection_limit, units, method, notes) %>%
+  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) %>%
   unique()
 
 d18O <- oxygen18 %>%
   rename(samplecode = Sample.ID,
          parameter = Isotope,
          value = MeanDeltaOfAnalyses,
-         Std = StdDevOfDeltaOfInjs) %>%
-  select(samplecode, parameter, value, Std) %>%
-  # get average of std of 2 sets of 5 injections per sample
+         sd = StdDevOfDeltaOfInjs) %>%
+  select(samplecode, parameter, value, sd) %>%
+  # get average of sd of 2 sets of 5 injections per sample
   group_by(samplecode) %>%
-  filter(!is.na(Std)) %>%
-  mutate(namen = paste0("Std", row_number())) %>%
+  filter(!is.na(sd)) %>%
+  mutate(namen = paste0("sd", row_number())) %>%
   ungroup() %>%
   pivot_wider(names_from = namen,
-              values_from = Std) %>%
-  mutate(std = rowMeans(select(., 4:ncol(.)), na.rm=T) %>% round(digits = 2),
+              values_from = sd) %>%
+  mutate(sd = rowMeans(select(., 4:ncol(.)), na.rm=T) %>% round(digits = 2),
          limit_symbol = "",
          detection_limit = NA,
          units = "‰",
          method = "IA",
          notes = ifelse(is.na(value), "Value is ignored after analysis", "")) %>%
   # select relevant columns and put in right format
-  select(samplecode, parameter, value, std, limit_symbol, detection_limit, units, method, notes) %>%
+  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) %>%
   unique()
 
 # merge data together
@@ -191,8 +190,8 @@ dH <- deuterium_raw %>%
   dplyr::summarise(nr.measurements = n(),
                    parameter = "d2H",
                    value = mean(Final_Delta),
-                   std = sd(Final_Delta),
-                   std_avg = mean(StdDevOfDeltaOfInjs))
+                   sd = sd(Final_Delta),
+                   sd_avg = mean(StdDevOfDeltaOfInjs))
 
 dO <- oxygen18_raw %>%
   select(Sample.ID, Analysis_Date_Time, Isotope, Final_Delta, MeanDeltaOfInjs, StdDevOfDeltaOfInjs,
@@ -203,17 +202,17 @@ dO <- oxygen18_raw %>%
   dplyr::summarise(nr.measurements = n(),
                    parameter = "d18O",
                    value = mean(Final_Delta),
-                   std = sd(Final_Delta),
-                   std_avg = mean(StdDevOfDeltaOfInjs))
+                   sd = sd(Final_Delta),
+                   sd_avg = mean(StdDevOfDeltaOfInjs))
 
 # combine dH and dO
 d <- rbind(dH, dO)
 
 # wide format for scatterplot
 d_wide <- d %>%
-  select(Sample.ID, parameter, value) %>%
+  select(Sample.ID, parameter, value, sd) %>%
   pivot_wider(names_from = parameter,
-              values_from = value) %>%
+              values_from = c(value, sd)) %>%
   mutate(watercode = substr(Sample.ID, start = 1, stop = 2)) 
 d_wide$sampletype <- d_wide$watercode %>% 
   recode("AI" = "air",
@@ -233,7 +232,13 @@ d_wide %>%
   view()
 
 # plot
-ggplot(d_wide %>% filter(sampletype != "demi-water"), aes(x = `d18O`, y = `d2H`)) +
+ggplot(d_wide %>% filter(sampletype != "demi-water"), aes(x = value_d18O, y = value_d2H)) +
+    # errorbar 2H
+  geom_errorbar(aes(ymin = value_d2H - sd_d2H, ymax = value_d2H + sd_d2H),
+                width = 0.05, colour = "grey") +
+  # errorbar 18O
+  geom_errorbar(aes(xmin = value_d18O - sd_d18O, xmax = value_d18O + sd_d18O),
+                width = 0.4, colour = "grey") + 
   geom_abline(aes(slope = 8.02, intercept = 9.47, colour = "GMWL"),
               linetype = "dashed", show.legend = TRUE) +
   geom_abline(aes(slope = 5.575918, intercept = 1.815, colour = "TWML"),
@@ -261,9 +266,9 @@ ggplot(d_wide %>% filter(sampletype != "demi-water"), aes(x = `d18O`, y = `d2H`)
   coord_cartesian(xlim = c(-3.1, 1.76),
                   ylim = c(-20, 15)) +
   theme_bw() + 
-  theme(legend.position = c(0.2, 0.75))
+  theme(legend.position = c(0.15, 0.78))
 ggsave(paste0(output, "Output/Figures/Hydrochemistry/isotopes_incomplete.png"),
-       width = 5, height = 5)
+       width = 8, height = 8)
 
 ###############################################################################
 # save data

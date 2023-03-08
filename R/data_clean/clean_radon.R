@@ -19,8 +19,7 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, openxlsx, ggmap, 
-               sf, leaflet, data.table, cowplot, data.table)
+pacman::p_load(tidyverse, openxlsx)
 
 ###############################################################################
 # load data
@@ -29,7 +28,7 @@ pacman::p_load(tidyverse, openxlsx, ggmap,
 # set data file location
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
 
-# alkalinity data file
+# radon data file
 radon <- read.xlsx(paste0(input, "Radon/Radon_measurements.xlsx"),
                    startRow = 1)
 
@@ -44,7 +43,7 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 d <- radon %>%
   # add parameter column with Radon
   mutate(parameter = "Rn",
-         units = "Bq/l",
+         units = "Bq/m3",
          notes = ifelse(is.na(Notes),
                         paste("Sampling method:", Sampling.method),
                         paste(Notes, "Sampling method:", Sampling.method)),
@@ -52,12 +51,13 @@ d <- radon %>%
          detection_limit = NA,
          method = "RAD7 Big Bottle System") %>%
   # rename columns
-  rename(value = `Rn.[Bq/L]`) %>%
+  rename(value = `Rn.[Bq/m3]`) %>%
   # select only relevant columns
-  select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes)
+  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) 
 
 # some samples have 2 radon measurements, drop the lowest value
 duplos <- d %>%
+  select(-sd) %>%
   group_by(samplecode) %>%
   mutate(samples = n_distinct(value),
          id = row_number()) %>%
@@ -65,7 +65,9 @@ duplos <- d %>%
   filter(samples > 1) %>%
   pivot_wider(names_from = id,
               values_from = value) %>%
-  mutate(value = ifelse(`1` > `2`, `1`, `2`)) 
+  mutate(value = ifelse(`1` > `2`, `1`, `2`)) %>%
+  # add sd based on value
+  left_join(., d %>% select(samplecode, value, sd))
   #select(samplecode, parameter, value, units, Notes) 
 
 ggplot(duplos, aes(x = `1`, y = `2`)) +
@@ -80,7 +82,7 @@ d_set <- d %>%
   # remove samples with double measurements
   filter(!samplecode %in% duplos$samplecode) %>%
   # add records from duplos with highest values to dataset
-  rbind(., duplos %>% select(samplecode, parameter, value, limit_symbol, detection_limit, units, method, notes))
+  rbind(., duplos %>% select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes))
 
 # Check if every sample has only 1 value
 check <- d_set %>%

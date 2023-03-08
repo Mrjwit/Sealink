@@ -176,7 +176,7 @@ metals <- c("Al", "As", "B", "Ba", "Be", "Ca", "Co", "Cr", "Cu", "Fe", "K", "Li"
 
 d <- data %>%
   filter(year == 2021, !is.na(value),
-         sampletype == "groundwater",
+         #sampletype == "groundwater",
          # select only metals
          parameter %in% metals) %>%
   mutate(value = ifelse(units == "mg/l", value * 1000, value))
@@ -201,6 +201,26 @@ ggplot(d %>% mutate(myaxis = paste0(parameter, "\n", num)),
   theme_bw() + 
   annotation_logticks(sides = "lr")
 #ggsave(paste0(output, "figures/groundwater_boxplot_metals_ugl.png"))
+
+# ordered boxplots
+d_ordered <- d %>% 
+  group_by(parameter) %>%
+  mutate(p50 = median(value, na.rm = T)) %>%
+  ungroup()
+
+ggplot(d_ordered %>% mutate(myaxis = paste0(as.character(parameter), "\n", num)),
+       aes(x = reorder(myaxis, -p50), y = value)) +
+  stat_boxplot(geom = "errorbar", width = 0.4) +
+  geom_boxplot(fill = "lightgrey", width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[ug/L]", trans = 'log10',
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)),
+                     sec.axis = sec_axis(~.,
+                                         labels = trans_format("log10", math_format(10^.x)))) +
+  theme_bw() + 
+  annotation_logticks(sides = "lr")
+ggsave(paste0(output, "figures/cations_boxplot_ugl_ordered.png"))
 
 d <- data %>%
   filter(year == 2021, !is.na(value),
@@ -228,7 +248,7 @@ ggplot(d %>% mutate(myaxis = paste0(parameter, "\n", num)),
                                          labels = trans_format("log10", math_format(10^.x)))) +
   theme_bw() + 
   annotation_logticks(sides = "lr")
-ggsave(paste0(output, "figures/groundwater_wastewater_boxplot_metals_ugl.png"))
+#ggsave(paste0(output, "figures/groundwater_wastewater_boxplot_metals_ugl.png"))
 
 
 # metals per geology

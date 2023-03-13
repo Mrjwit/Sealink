@@ -8,7 +8,7 @@
 #
 # Author: Mike Wit
 # Date: 12-01-2022
-# Edit: XX-XX-XXXX
+# Edit: 13-03-2023
 # 
 # 
 ###############################################################################
@@ -28,9 +28,12 @@ pacman::p_load(tidyverse, openxlsx)
 # set data file location
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
 
-# alkalinity data file
+# E.coli data file fieldwork 2021-2022
 ecoli <- read.xlsx(paste0(input, "E.coli/E.coli.xlsx"),
-                   startRow = 2)
+                   sheet = "Fieldwork1", startRow = 2)
+# E.coli data file fieldwork 2022-2023
+ecoli2 <- read.xlsx(paste0(input, "E.coli/E.coli.xlsx"),
+                    sheet = "Fieldwork2", startRow = 2)
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -39,6 +42,7 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 # edit data
 ###############################################################################
 
+#### first fieldwork ####
 # Clean up the E.coli data
 d <- ecoli %>%
   # some plates were incubated with dilutions, select the ones with the highest accuracy
@@ -47,9 +51,7 @@ d <- ecoli %>%
   mutate(parameter = "E.coli",
          units = "CFU/100 ml") %>%
   # rename columns
-  dplyr::rename(samplecode = Sample.nr,
-         value = E..coli,
-         notes = Notes) %>%
+  dplyr::rename(value = E..coli) %>%
   # select only relevant columns
   select(samplecode, parameter, value, units, notes)
 
@@ -91,8 +93,46 @@ d <- d %>%
   select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) %>%
   arrange(samplecode)
   
+#### second fieldwork ####
+d2 <- ecoli2 %>%
+  # some plates were incubated with dilutions, select the ones with the highest accuracy
+  filter(Select == 1) %>%
+  # add parameter column with E.coli
+  mutate(parameter = "E.coli",
+         units = "CFU/100 ml") %>%
+  # rename columns
+  dplyr::rename(conc = E..coli) %>%
+  # select only relevant columns
+  select(samplecode, parameter, conc, units, notes) 
+
+# plot duplo values against each other
+ggplot(d2 %>% select(samplecode, conc) %>%
+         group_by(samplecode) %>%
+         mutate(duplo = paste("duplo", row_number())) %>%
+         pivot_wider(names_from = duplo,
+                     values_from = conc),
+       aes(`duplo 1`, `duplo 2`)) +
+  geom_abline(slope = 1) +
+  geom_point() +
+  coord_cartesian(xlim = c(0, 3e5), ylim = c(0, 3e5)) +
+  theme_bw()
+
+# Average the duplo/triplo samples
+d2 <- d2 %>%
+  group_by(samplecode) %>%
+  mutate(value = mean(conc, na.rm = T),
+         limit_symbol = "",
+         detection_limit = NA,
+         sd = NA,
+         method = "Petrifilm plate") %>%
+  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) %>%
+  arrange(samplecode)
+
+## merge datasets together ##
+dat <- rbind(d, d2)
+
 # Check if every sample has only 1 value
-check <- d %>%
+check <- dat %>%
   group_by(samplecode) %>%
   dplyr::summarise(measurements = n_distinct(value)) %>%
   filter(measurements > 1)
@@ -108,6 +148,6 @@ if(nrow(check) > 0) {
 # save data
 ###############################################################################
 
-write.xlsx(d, paste0(output, "Clean_data/ecoli_clean.xlsx"))
+write.xlsx(dat, paste0(output, "Clean_data/ecoli_clean.xlsx"))
 
 

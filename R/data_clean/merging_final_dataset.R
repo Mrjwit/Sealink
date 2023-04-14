@@ -31,30 +31,37 @@ pacman::p_load(tidyverse, openxlsx, ggmap,
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
 
 # load cleaned data of 2021-2022 fieldwork
-alk <- openxlsx::read.xlsx(paste0(input, "alkalinity_clean.xlsx"))
-ecoli <- openxlsx::read.xlsx(paste0(input, "ecoli_clean.xlsx"))
-radon <- openxlsx::read.xlsx(paste0(input, "radon_clean.xlsx"))
-labdata <- openxlsx::read.xlsx(paste0(input, "lab_data_long.xlsx"))
-isotopes <- openxlsx::read.xlsx(paste0(input, "isotopes_clean.xlsx"))
-metadata <- openxlsx::read.xlsx(paste0(input, "survey_clean.xlsx"))
-DOC <- openxlsx::read.xlsx(paste0(input, "DOC_clean.xlsx"))
+alk <- openxlsx::read.xlsx(paste0(input, "alkalinity_clean.xlsx")) # includes fw1 + 2
+ecoli <- openxlsx::read.xlsx(paste0(input, "ecoli_clean.xlsx")) # includes fw1 + 2
+radon <- openxlsx::read.xlsx(paste0(input, "radon_clean.xlsx")) # includes fw1 + 2
+labdata <- openxlsx::read.xlsx(paste0(input, "lab_data_long.xlsx")) # only fw1
+isotopes <- openxlsx::read.xlsx(paste0(input, "isotopes_clean.xlsx")) # only fw1, yet
+metadata <- openxlsx::read.xlsx(paste0(input, "survey_clean.xlsx")) # includes fw1 + 2
+DOC <- openxlsx::read.xlsx(paste0(input, "DOC_clean.xlsx")) # only fw1, yet
 
 # load dataset of Jessie (2020-2021)
 #
 #
 
+# load cleaned labdata of 2022-2023 fieldwork
+IC2 <- openxlsx::read.xlsx(paste0(input, "Second_fieldwork/IC_Oct-Jan_2023.xlsx")) %>%
+  # remove NH4 and PO4 from IC to replace with DA
+  filter(!parameter %in% c("NH4", "PO4"))
+DA2 <- openxlsx::read.xlsx(paste0(input, "Second_fieldwork/DA_Oct-Jan_2023.xlsx"))
+
+
 # load historic hydrochemical dataset of 1977 and 1992
 data1977_1992 <- openxlsx::read.xlsx(paste0(input, "hydrochemistry1977-1992.xlsx"))
 
 # output file location
-output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
+output <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/final_merged/" 
 
 ###############################################################################
 # edit data
 ###############################################################################
 
 ## Editing data
-# put metadata of field measurements in long format so that in can be merged
+# put field measurements from metadata in long format so that in can be merged
 d <- metadata %>%
   select(samplecode, EC_uS, pH, Temp, DO, DO_sat, redox, NO3, NO2) %>%
   dplyr::rename(NO3_field = NO3,
@@ -65,6 +72,7 @@ d <- metadata %>%
                values_to = "value") %>%
   mutate(limit_symbol = "",
          detection_limit = NA,
+         sd = NA,
          units = case_when(
            parameter == "EC_uS" ~ "uS/cm",
            parameter == "pH" ~ "",
@@ -82,7 +90,8 @@ d <- metadata %>%
 # Merge all cleaned datasets but keep metadata separated for now, # Remove units mg N/L and mg P/L
 data <- rbind(labdata, 
               alk %>% filter(units == "mg/l"), 
-              ecoli, radon, d, isotopes, DOC) %>%
+              ecoli, radon, d, isotopes, DOC,
+              IC2, DA2) %>%
   arrange(samplecode, parameter) %>%
   mutate(watercode = substr(samplecode, start = 1, stop = 2)) %>%
   # Remove units mg N/L and mg P/L, for PO4 only select DA analysis
@@ -174,6 +183,20 @@ pts_lu <- st_intersection(pts, cur_zonalmap %>% select(landuse_zonal_map)) %>%
 d_meta <- d_meta %>%
   left_join(., pts_lu)
 
+# intersect sample points with catchment maps
+catchments <- st_read(paste0(input_GIS,
+                             "Layers/Catchments/Curacao_SAGA_catchments_Stahler_6.shp")) %>%
+  st_transform(crs = 4326)
+catchments <- st_make_valid(catchments)
+
+pts_catch <- st_intersection(pts, catchments %>% select(Catchment) %>% filter(!is.na(Catchment))) %>%
+  st_drop_geometry()
+
+# add catchment to metadata file
+d_meta <- d_meta %>%
+  left_join(., pts_catch)
+
+
 ###############################################################################
 # Adjust HCO3 values
 ###############################################################################
@@ -209,6 +232,7 @@ d <- data %>%
                values_to = "value") %>%
   mutate(limit_symbol = "",
          detection_limit = NA,
+         sd = NA,
          units = "mg/l",
          method = ifelse(samplecode %in% c("GW002", "GW033", "RW001", "RW002"),
                          "DA ALKALIN 550", "Field titration"),
@@ -228,7 +252,7 @@ data <- rbind(data, d) %>%
 data$sampletype <- data$watercode %>% 
   recode("AI" = "air",
          "GW" = "groundwater",
-         "SR" = "surfacewater",
+         "SR" = "surface runoff",
          "SW" = "surfacewater", 
          "SP" = "groundwater",
          "WW" = "wastewater",
@@ -251,8 +275,14 @@ data$subtype <- data$watercode %>%
 # differentiate between treated (WW001, SW001-SW002) and untreated (WW002-WW003) wastewater
 data <- data %>%
   mutate(subtype = case_when(
-    samplecode %in% c("WW001", "SW001", "SW002") ~ "treated wastewater",
-    samplecode %in% c("WW002", "WW003") ~ "untreated wastewater",
+    samplecode %in% c("WW001", "WW005", "WW007", "SW001", "SW002", "SW005") ~ "treated wastewater",
+    samplecode %in% c("WW002", "WW003", "WW004", "WW006", "WW008", "SR028") ~ "untreated wastewater",
+    samplecode %in% c("SR009", "SR010", "SR012", "SR014", "SR015", "SR016", 
+                      "SR017", "SR018", "SR019", "SR020", "SR021", "SR023", 
+                      "SR024", "SR025", "SR026", "SR027", "SR029", "SR031", 
+                      "SR032", "SR033", "SR034") ~ "rooi discharge",
+    samplecode %in% c("SW004", "SW009", "SW010") ~ "spring",
+    samplecode == "SW012" ~ "groundwater",
     TRUE ~ subtype ))
 
 ###############################################################################
@@ -271,6 +301,7 @@ d <- data1977_1992 %>%
   mutate(putcode = putcode,
          samplecode = paste(year, sample, sep = "_"),
          limit_symbol = ifelse(is.na(dl), "", dl),
+         sd = NA,
          detection_limit = case_when(
            year == 1992 & parameter %in% cat92 ~ 0.04,
            year == 1992 & parameter %in% an92 ~ 0.1,
@@ -291,12 +322,16 @@ d <- data1977_1992 %>%
          xcoord = lon,
          ycoord = lat) %>%
   filter(!is.na(putcode)) %>%
-  select(putcode, samplecode, year, parameter, value, limit_symbol, detection_limit,
+  select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
 
-# correct some values for pH and...
+# correct some values for pH and change high PO4 concentration for samplecode 1992_96 that is factor 1000 too high
 d <- d %>%
-  mutate(value = ifelse(parameter == "pH" & value == 0, NA, value))
+  mutate(value = case_when(
+    parameter == "pH" & value == 0 ~ as.numeric(NA),
+    parameter == "PO4" & samplecode == "1992_96" ~ value / 1000,
+    parameter == "HCO3" & samplecode == "1992_85" ~ as.numeric(NA),
+    TRUE ~ value))
 
 # add data from 1992 for Pb and F which were all <dl (0.04 and 0.1 mg/L respectively)
 set <- d %>%
@@ -304,11 +339,12 @@ set <- d %>%
   group_by(putcode, samplecode, year, notes, watercode, sampletype, subtype, xcoord, ycoord) %>%
   summarise(parameter = c("Pb", "F"),
             value = c(0.04, 0.1),
+            sd = NA,
             limit_symbol = "<",
             detection_limit = c(0.04, 0.1),
             units = "mg/l",
             method = c("ICP-AES", "IC Dionex QIC")) %>%
-  select(putcode, samplecode, year, parameter, value, limit_symbol, detection_limit,
+  select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
 d <- rbind(d, set)
 
@@ -316,14 +352,65 @@ d <- rbind(d, set)
 
 
 
+## final adjustments for 2021-2022
+dat <- data %>% mutate(putcode = case_when(
+  samplecode == "GW002" ~ "4z1",
+  samplecode %in% c("GW008", "GW094") ~ "4n83",
+  samplecode == "GW018" ~ "3n5",
+  samplecode == "GW019" ~ "2n58",
+  samplecode == "GW023" ~ "5n434",
+  samplecode %in% c("GW024", "GW072") ~ "5z14",
+  samplecode == "GW028" ~ "5n8",
+  samplecode == "GW038" ~ "5z16",
+  samplecode == "GW039" ~ "5z28",
+  samplecode == "GW045" ~ "3z2",
+  samplecode %in% c("GW046", "GW076") ~ "5n277",
+  samplecode %in% c("GW047", "GW077") ~ "5n427",
+  samplecode == "GW050" ~ "3z102",
+  samplecode == "GW054" ~ "3z51",
+  samplecode == "GW057" ~ "5z12",
+  samplecode == "GW059" ~ "2n19",
+  samplecode == "GW061" ~ "2n18",
+  samplecode %in% c("GW062", "GW082") ~ "2n8",
+  samplecode == "GW065" ~ "2n2",
+  samplecode == "GW066" ~ "2n4",
+  samplecode == "GW070" ~ "5n330",
+  samplecode == "SP002" ~ "3n12",
+  samplecode == "GW080" ~ "5z376",
+  samplecode == "GW081" ~ "5z17",
+  samplecode == "GW083" ~ "2n16",
+  samplecode == "GW084" ~ "2n40",
+  samplecode == "GW085" ~ "2n28",
+  samplecode == "GW086" ~ "2n7",
+  samplecode == "GW089" ~ "1z5",
+  samplecode == "GW090" ~ "1n1",
+  samplecode == "GW098" ~ "5z15",
+  samplecode == "GW108" ~ "1z26",
+  samplecode == "GW109" ~ "1z1",
+  samplecode == "GW117" ~ "1z7",
+  samplecode %in% c("GW006", "GW114") ~ "Ronde Klip",
+  samplecode %in% c("GW009", "GW115") ~ "Well Manfred CMF",
+  samplecode %in% c("GW014", "GW014A", "GW014B", "GW073", "GW113") ~ "Well Gerard van Buurt",
+  samplecode %in% c("GW055", "GW055A", "GW055B", "GW071") ~ "Herb garden",
+  TRUE ~ ""), 
+                              year = case_when(
+                                samplecode %in% labdata$samplecode ~ 2021,
+                                samplecode %in% IC2$samplecode ~ 2022,
+                                TRUE ~ NA_real_),
+                              parameter = case_when(
+                                parameter == "EC_uS" ~ "EC",
+                                TRUE ~ parameter)) %>%
+  left_join(., metadata %>% select(samplecode, xcoord, ycoord))
+
 ## add everything together
-data <- rbind(data %>% mutate(putcode = NA, 
-                              year = 2021,
-                              xcoord = NA,
-                              ycoord = NA), d) %>%
-  select(putcode, samplecode, year, parameter, value, limit_symbol, detection_limit,
+data <- rbind(dat, d) %>%
+  select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord) %>%
-  arrange(year, samplecode, parameter)
+  arrange(year, samplecode, parameter) %>%
+  # change pH units
+  mutate(units = case_when(
+    parameter == "pH" ~ "-",
+    TRUE ~ units))
 
 # quick check dl 1992
 data %>%
@@ -357,9 +444,9 @@ data %>%
 ###############################################################################
 
 # hydrochemistry
-openxlsx::write.xlsx(data, paste0(output, "Clean_data/hydrochemistry_curacao.xlsx"))
+openxlsx::write.xlsx(data %>% filter(!sampletype %in% c("air", "Mi", "Ta")), paste0(output, "hydrochemistry_curacao.xlsx"))
 
 # metadata file
-openxlsx::write.xlsx(d_meta, paste0(output, "Clean_data/metadata_2021.xlsx"))
+openxlsx::write.xlsx(d_meta, paste0(output, "metadata_2021_2022.xlsx"))
 
 

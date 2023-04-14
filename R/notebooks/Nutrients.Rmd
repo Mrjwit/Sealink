@@ -1,0 +1,143 @@
+---
+title: "Nutrients Curacao"
+author: "Mike Wit"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# load packages
+# Loading packages
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, openxlsx, ggmap, 
+               sf, leaflet, data.table, cowplot, data.table, knitr,
+               pander)
+
+# load data
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/final_merged/" 
+
+data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
+meta <- openxlsx::read.xlsx(paste0(input, "metadata_2021_2022.xlsx"))
+
+```
+
+## Hydrochemistry and metadata structure
+
+Below the content and structure of the data is given:
+
+```{r cars}
+str(data)
+kable(head(data))
+```
+
+### 2nd fieldwork Oct'22 - Jan'23
+Overview sample types
+
+```{r}
+data %>%
+  filter(year == 2022) %>%
+  filter(parameter %in% c("EC", "pH", "NO3", "PO4", "NH4", "HCO3")) %>%
+  group_by(subtype) %>%
+  ggplot(., aes(x = subtype, y = value, fill = subtype)) +
+  geom_boxplot() +
+  theme_bw() +
+  facet_wrap(facets = "parameter", scales = "free")
+
+
+```
+
+
+### Nitrate
+
+Comparing nitrate concentrations in groundwater for the years 1992, 2021 and 2022.
+
+```{r nitrate I, echo=FALSE}
+d <- data %>%
+  filter(parameter == "NO3",
+         sampletype == "groundwater") %>%
+  select(year, samplecode, value, limit_symbol)
+
+ggplot(d, aes(x = as.factor(year), y = value, fill = as.factor(year))) +
+  geom_boxplot() +
+  scale_y_continuous("NO3 [mg/L]") +
+  coord_cartesian(ylim = c(0, 200)) +
+  scale_x_discrete("") +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ggtitle("Nitrate concentrations in groundwater, Curacao")
+```
+Comparing multiple parameters for 2021 - 2022
+
+```{r}
+d <- data %>%
+  filter(parameter %in% c("EC", "pH", "NO3", "PO4", "NH4"),
+         sampletype == "groundwater") %>%
+  select(year, samplecode, parameter, value, limit_symbol)
+
+ggplot(d, aes(x = as.factor(year), y = value)) +
+  geom_boxplot() +
+  # scale_y_continuous("NO3 [mg/L]") +
+  # coord_cartesian(ylim = c(0, 200)) +
+  # scale_x_discrete("") +
+  theme_bw() +
+  # theme(legend.position = "none") +
+  # ggtitle("Nitrate concentrations in groundwater, Curacao") +
+  facet_wrap(facets = "parameter", scales = "free")
+
+
+```
+
+
+For the same wells measured over time: and GW071: Herb garden open well GW024 and GW072: Klein Kwartier well 5Z14(B) GWXXX and GW073: Geert GWXXX and GW074:
+
+```{r table1, echo=FALSE, message = FALSE, results='asis'}
+tabl <- "
+|  1977  |  1992  |  2020  |  2021  |  2022  | Description |
+|--------|--------|--------|--------|--------|-------------|
+|        |        |        |        |  GW071 | Herb Garden |
+| | | | GW024 | GW072 | Klein Kwartier 5Z14(B) |
+| | | | | |
+| | | | | |
+| | | | | |
+"
+cat(tabl)
+```
+
+```{r}
+# only wells with multiple measurements
+d <- data %>%
+  group_by(putcode) %>%
+  mutate(yearly_measurement = n_distinct(year),
+         samples = paste(unique(samplecode), collapse = ", ")) %>%
+  ungroup() 
+
+d %>%
+  filter(parameter == "EC",
+         yearly_measurement > 1,
+         putcode != "") %>%
+  select(putcode, samples, year, value, yearly_measurement) %>%
+  distinct() %>%
+  pivot_wider(names_from = year,
+              values_from = value) %>% view()
+  
+
+```
+
+### Phosphate
+
+```{r phosphate I, echo=FALSE}
+d <- data %>%
+  filter(parameter == "PO4",
+         sampletype == "groundwater") %>%
+  select(year, samplecode, value, limit_symbol)
+
+ggplot(d, aes(x = as.factor(year), y = value)) +
+  geom_boxplot() +
+  scale_y_continuous("PO4 [mg/L]") +
+  #coord_cartesian(ylim = c(0, 200)) +
+  scale_x_discrete("") +
+  theme_bw() +
+  ggtitle("Phosphate concentrations in groundwater, Curacao")
+```

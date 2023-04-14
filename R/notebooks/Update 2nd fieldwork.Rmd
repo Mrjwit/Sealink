@@ -1,0 +1,1576 @@
+---
+title: "Update 2nd fieldwork"
+author: "Mike Wit"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# load packages
+# Loading packages
+if (!require("pacman")) install.packages("pacman")
+# pacman::p_load(tidyverse, openxlsx, ggmap, osmdata,
+#                sf, leaflet, data.table, cowplot, data.table, knitr,
+#                pander, viridis, ggsignif, ggnewscale, ggspatial,
+#                ggh4x)
+pacman::p_load(tidyverse, openxlsx, ggmap, sf, cowplot, knitr, 
+               viridis, ggsignif, ggnewscale, ggh4x, ggspatial,
+               scales)
+
+# load data
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/final_merged/" 
+
+data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
+meta <- openxlsx::read.xlsx(paste0(input, "metadata_2021_2022.xlsx"))
+
+# importing GIS layers
+input_GIS <- "C:/Users/mikewit/Documents/SEALINK/GIS/SEALINK/"
+
+cur_coastline <- st_read(paste0(input_GIS,
+                                "Layers/Topography/CUR_Coastline.shp")) %>%
+  st_transform(crs = 4326)
+cur_geology <- st_read(paste0(input_GIS,
+                              "Layers/Geology/Geology Shapefile EATH.shp")) %>%
+  st_transform(crs = 4326) 
+
+cur_zonalmap <- st_read(paste0(input_GIS,
+                               "Layers/Landuse/Curacao_EOP.shp")) %>%
+  st_transform(crs = 4326)
+
+catchments <- st_read(paste0(input_GIS,
+                             "Layers/Catchments/Curacao_SAGA_catchments_Stahler_6.shp")) %>%
+  st_transform(crs = 4326)
+
+# # register PERSONAL google API key using ggmap
+# ggmap::register_google("AIzaSyDxRcQD0rktCLuf2Mk0ljvhdcweVTmrRO0", write = T)
+# #"terrain", "terrain-background" "satellite" "roadmap" "hybrid" "toner" "watercolor" "terrain-labels"
+# cur_google <- get_map(location = c(lon = -69, lat = 12.2),
+#                       type = "terrain-background")
+# stamen background map
+# target_bbox <- c(left = -69.2, bottom = 12.0, right = -68.7, top = 12.4)
+# cur_stamen <- get_stamenmap(target_bbox, maptype = "terrain-background", zoom = 10)
+
+###############################################################################
+# editing data
+###############################################################################
+
+# add catchment column to data from metadata
+pts <- st_as_sf(data %>% 
+                  filter(!is.na(xcoord)) %>%
+                  select(samplecode, xcoord, ycoord), 
+                coords = c("xcoord", "ycoord"),
+                crs = 4326, agr = "constant") 
+
+catchments <- st_make_valid(catchments)
+pts_catch <- st_intersection(pts, catchments %>% select(Catchment) %>% filter(!is.na(Catchment))) %>%
+  st_drop_geometry() %>%
+  distinct()
+
+# add catchment to metadata file
+data <- data %>%
+  left_join(., pts_catch)
+
+# convert dataset to sf point object for plotting
+pts <- st_as_sf(data %>% filter(!is.na(xcoord)), coords = c("xcoord", "ycoord"),
+                crs = 4326, agr = "constant") 
+
+```
+
+
+
+```{r catchmentsPlot, echo=F}
+# Piscadera Catchment
+
+# with background map
+target_bbox <- c(left = -68.99, bottom = 12.12, right = -68.93, top = 12.18)
+
+cur_google <- get_map(target_bbox,
+                      zoom = 13,
+                      type = "terrain-background",
+                      style = "feature:poi|element:all|visibility:off")
+# satellite
+cur_google <- get_googlemap("Curacao",
+                            maptype = "hybrid",
+                            scale = 2,
+                            zoom = 13,
+                            style = "feature:poi|element:all|visibility:off")
+# style = "feature:road|visibility:off&style=element:labels|visibility:off&style=feature:administrative|visibility:off"
+
+ggmap(cur_google)
+# stamen background map
+cur_stamen <- get_stamenmap(target_bbox, maptype = "terrain-background", zoom = 13)
+
+ggmap(cur_google) +
+  # catchment
+  geom_sf(data = catchments %>% filter(Catchment == "Piscadera"),
+          fill = NA,
+          color = "red",
+          linewidth = 1,
+          inherit.aes = FALSE) +
+  coord_sf(crs = st_crs(4326)) +
+  coord_sf(xlim = c(-68.99, -68.93),
+           ylim = c(12.12, 12.18)) +
+  #theme(legend.position = c(0.75, 0.8)) +
+  ggtitle("Piscadera Catchment") +
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5),
+                                        linetype = "dashed",
+                                        size = 0.5),
+        panel.background = element_rect(fill = "aliceblue"))
+
+# crop_factor <- st_bbox(c(xmin = -68.99,
+#                          xmax = -68.93,
+#                          ymax = 12.18,
+#                          ymin = 12.12),
+#                        crs = st_crs(cur_geology))
+# 
+# cropped_geology <- st_crop(cur_geology, crop_factor)
+# 
+#   coord_sf(xlim = c(-68.99, -68.93),
+#            ylim = c(12.12, 12.18)) 
+
+## without background map
+ggplot() +
+  # geology
+  geom_sf(data = cur_geology, aes(fill = Field)) +
+  scale_fill_manual(name = "Geology",
+                    values = c("yellowgreen", "purple4", "khaki2", "orange", "lightskyblue1")) +
+  # catchment
+  geom_sf(data = catchments %>% filter(Catchment == "Piscadera"),
+          fill = NA,
+          color = "black",
+          linewidth = 1) +
+  #coord_sf(crs = st_crs(4326)) +
+  #new_scale_fill() +
+  # geom_sf(data = pts %>% filter(parameter == "Rn",
+  #                            sampletype == "groundwater") %>%
+  #           mutate(value = value / 1000),
+  #      aes(fill = cut(value, breaks = c(0, 1, 2, 5, 10, 50))),
+  #      colour = "black",
+  #      pch = 21,
+  #      size = 2) +
+  # scale_fill_brewer(type = "qual",
+  #                   palette = "RdGy",
+  #                   name = "Rn [Bq/l]",
+  #                   direction = -1,
+  #                   na.value = "black",
+  #                   labels = c("0 - 1",
+  #                              "1 - 2",
+  #                              "2 - 5",
+  #                              "5 - 10",
+  #                              ">10")) +
+  coord_sf(xlim = c(-68.99, -68.93),
+           ylim = c(12.12, 12.18)) + 
+  ggtitle("Piscadera Catchment") +
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5),
+                                        linetype = "dashed",
+                                        size = 0.5),
+        panel.background = element_rect(fill = "aliceblue"))
+
+```
+
+## Intro
+
+topics discussed in this document:
+- Dataset
+- Second fieldwork Oct'22 - Jan'23;
+- 
+-
+-
+
+### Data structure
+All data is collected into a hydrochemical database. The data from 2020 MSc student Jessie still needs to be included. 
+For the year 2022 the cations, isotopes and DOC are still missing. 
+Below the content and structure of the hydrochemical and metadata is given:
+
+```{r data, echo=F}
+str(data)
+kable(head(data))
+```
+
+## 2nd fieldwork Oct'22 - Jan'23
+Below an overview of the different sample types collected is shown. The `sampletype` reflects the conditions how a sample is collected. 
+
+Additionally a further specification is attributed per sample. This `subtype` is based on the interpretation of the sample origin as determined in the field or the chemical results afterwards.
+
+- SR028: sampled as a surface runoff coming from a overflowing manhole. Sampletype: surface runoff, Subtype: **untreated wastewater**.
+- SW005: surface water infiltration pond of treated wastewater. Sampletype: surfacewater, subtype: **treated wastewater**
+- SW006, SW009, SW010: pond of surface water, which was in fact phreatic groundwater. 
+- For surface runoff samples a distinction is made between surface runoff occurring as **overland flow** after rain events and more continuous flowing **rooi discharge** during wet conditions. 
+
+```{r samples, message=FALSE, echo=F}
+d <- data %>%
+  filter(year %in% c(2021, 2022)) %>% 
+  select(year, samplecode, sampletype, subtype) %>%
+  distinct() %>%
+  group_by(sampletype, subtype, year) %>%
+  summarise(n = ifelse(is.na(n_distinct(samplecode)), 0, n_distinct(samplecode))) %>%
+  pivot_wider(names_from = year,
+              values_from = n) %>%
+  mutate(Total = `2021`+`2022`)
+kable(d)
+```
+
+## Quick summary watertypes
+
+```{r DifferencesWatertypes, echo=F}
+# selecting data
+i <- "subtype"
+d <- data %>%
+  filter( year %in% c(2021, 2022),
+         #sampletype %in% c("groundwater", "surface runoff"),
+         !sampletype %in% c("rainwater", "tapwater", "seawater"),
+         parameter %in% c("EC", "pH", "NH4", "NO3", "PO4", "E.coli")) %>%
+  # change EC from uS/cm to mS/cm
+  mutate(value = ifelse(parameter == "EC", value / 1000, value),
+         units = ifelse(parameter == "EC", "mS/cm", units)) %>%
+  # change highest E.coli values for visibility
+  mutate(value = ifelse(parameter == "E.coli" & samplecode %in% c("SW001", "SR002"),
+                        29999999, value)) %>%
+  # add spring subtype to groundwater
+  mutate(subtype = ifelse(subtype == "spring", "groundwater", subtype)) %>%
+  mutate(units = ifelse(parameter == "E.coli", "CFU/dl", units)) %>%
+  group_by(!!as.symbol(i), parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  ungroup() %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [mS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]",
+                                                  "E.coli [CFU/dl]")))
+
+# vertical boxplots
+ggplot(d %>% mutate(myaxis = paste0(!!as.symbol(i), "\n", num)), 
+       aes(x = value, y = myaxis, fill = !!as.symbol(i))) +
+  geom_boxplot() +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"),
+                               COL == 6 ~ scale_y_discrete(guide = "none"),
+                               COL == 7 ~ scale_y_discrete(guide = "none"))) +
+  #scale_x_continuous("", limits = quantile(d$value, c(0.1, 0.9), na.rm = T)) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(title = "Composition of different water types",
+       subtitle = "Boxplots for nutrients and EC, 2021-2022")
+
+# plot NH4 vs EC for groundwater
+d_set <- d %>%
+  filter(sampletype == "groundwater",
+         parameter %in% c("EC [mS/cm]", "NH4 [mg/l]")) %>%
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+  
+ggplot(d_set, aes(x = `EC [mS/cm]`, y = `NH4 [mg/l]`)) +
+  geom_point(alpha = 0.5) +
+  scale_x_continuous(limits = c(0, 20)) +
+  theme_bw()
+
+## without high numbers for better visuality
+d <- d %>%
+  mutate(value = case_when(
+    # high EC values
+    parameter == "EC [mS/cm]" & value > 15 ~ NA_real_,
+    parameter == "NO3 [mg/l]" & value > 200 ~ NA_real_,
+    TRUE ~ value))
+
+# vertical boxplots
+ggplot(d %>% mutate(myaxis = paste0(!!as.symbol(i), "\n", num)), 
+       aes(x = value, y = myaxis, fill = !!as.symbol(i))) +
+  geom_boxplot() +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"),
+                               COL == 6 ~ scale_y_discrete(guide = "none"),
+                               COL == 7 ~ scale_y_discrete(guide = "none"))) +
+  #scale_x_continuous("", limits = quantile(d$value, c(0.1, 0.9), na.rm = T)) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(title = "Composition of different water types",
+       subtitle = "Boxplots without outliers for nutrients and EC, 2021-2022")
+
+```
+
+## Sampling locations
+The second fieldwork was focussed on 3 catchments to further identify different water routes and corresponding chemical composition.
+
+### Catchment Piscadera
+
+#### surface runoff
+
+```{r}
+# surface runoff in Piscadera Catchment
+d <- data %>%
+  filter(Catchment == "Piscadera",
+         sampletype == "surface runoff",
+         parameter %in% c("EC", "NH4", "NO3", "PO4")) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [uS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]",
+                                                  "E.coli [CFU/dl]"))) %>%
+  mutate(class = case_when(
+    samplecode %in% c("SR005", "SR010", "SR011") ~ "Dam Julianadorp",
+    samplecode %in% c("SR012", "SR019", "SR020", "SR029") ~ "Outlet catchment",
+    samplecode %in% c("SR028") ~ "Untreated wastewater",
+    samplecode %in% c("SR030", "SR031") ~ "Upper catchment",
+    #samplecode %in% c("SR031") ~ "upstream rooi discharge",
+    TRUE ~ "")) %>%
+  mutate(class = factor(class, levels = c("Upper catchment",
+                                          "Dam Julianadorp",
+                                          "Untreated wastewater",
+                                          "Outlet catchment")))
+
+d <- d[order(d$class, d$samplecode, decreasing = T), ]
+d$samplecode = factor(d$samplecode, levels = unique(d$samplecode))
+
+ggplot(d, aes(x = value, y = samplecode, fill = subtype)) +
+  geom_col() +
+  facet_wrap(~ parameter, scales = "free") +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+ggplot(d, aes(x = value, y = reorder(samplecode, class), fill = class)) +
+  geom_col() +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(title = "Piscadera Catchment",
+       subtitle = "Surface runoff 2022")
+
+```
+
+
+#### groundwater
+
+```{r}
+# groundwater in Piscadera Catchment
+## 2022 only 
+d <- data %>%
+  filter(Catchment == "Piscadera",
+         sampletype == "groundwater",
+         year %in% c(2022),
+         samplecode != "GW020B",
+         parameter %in% c("EC", "NO3", "PO4")) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [uS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]",
+                                                  "E.coli [CFU/dl]"))) %>%
+  mutate(class = case_when(
+    samplecode %in% c("GW008", "GW094", "GW095", "GW096") ~ "Outlet catchment",
+    samplecode %in% c("GW010", "GW037", "GW046", "GW047", "GW076", "GW077", "GW104") ~ "Middle catchment",
+    samplecode %in% c("GW020A", "GW020B", "GW069", "GW070", "GW097", "GW103") ~ "Upper catchment",
+    #samplecode %in% c("SR031") ~ "upstream rooi discharge",
+    TRUE ~ "")) %>%
+  mutate(class = factor(class, levels = c("Upper catchment",
+                                          "Middle catchment",
+                                          "Outlet catchment")))
+d <- d[order(d$class, d$samplecode, decreasing = T), ]
+d$samplecode = factor(d$samplecode, levels = unique(d$samplecode))
+ggplot(d, aes(x = value, y = reorder(samplecode, -class), fill = class)) +
+  geom_col() +
+  facet_wrap(~ parameter, scales = "free") +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(title = "Piscadera Catchment",
+       subtitle = "Groundwater 2022")
+
+ggplot(d, aes(x = value, y = reorder(samplecode, class), fill = class)) +
+  geom_col() +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(title = "Piscadera Catchment",
+       subtitle = "Surface runoff 2022")
+
+```
+#### wastewater
+Samples have been collected both from untreated and 'treated' wastewater. **Treated wastewater** was sampled at distributed WWTP water, in one of the water basins at Klein Hofje or the infiltration ponds at Klein Kwartier. **Untreated wastewater** was collected entree point of Klein Hofje, spilling manhole or open sewage. 
+
+When comparing notable decrease in DOC, N (NH4) and E.coli are observed between before and after treatment. PO4 mainly remains elevated. 
+
+
+```{r, wastewater, echo=F, fig.width=10}
+i <- "subtype"
+d <- data %>%
+  filter(subtype %in% c("treated wastewater", "untreated wastewater"),
+         parameter %in% c("EC", "pH", "NH4", "NO3", "PO4", "DOC", "E.coli")) %>%
+  # change EC from uS/cm to mS/cm
+  mutate(value = ifelse(parameter == "EC", value / 1000, value),
+         units = ifelse(parameter == "EC", "mS/cm", units)) %>%
+  mutate(units = case_when(
+    parameter == "E.coli" ~ "CFU/dl",
+    TRUE ~ units)) %>%
+  mutate(class = ifelse(subtype == "treated wastewater", "treated", "untreated")) %>%
+  # mutate(value = case_when(
+  #   samplecode == "SW001" & parameter == "E.coli" ~ 999999,
+  #   TRUE ~ value)) %>%
+  group_by(!!as.symbol(i), parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  ungroup() %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [mS/cm]",
+                                                  "pH [-]",
+                                                  "HCO3 [mg/l]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]",
+                                                  "E.coli [CFU/dl]")))
+
+# individual samples bar plot
+d <- d[order(d$subtype, d$samplecode, decreasing = T), ]
+d$samplecode = factor(d$samplecode, levels = unique(d$samplecode))
+ggplot(d, aes(x = value, y = samplecode, fill = subtype)) +
+  geom_col() +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"),
+                               COL == 6 ~ scale_y_discrete(guide = "none"),
+                               COL == 7 ~ scale_y_discrete(guide = "none"))) +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(title = "Wastewater Curacao",
+       subtitle = "Treated and untreated wastewater samples 2021-2022")
+
+# vertical boxplots
+ggplot(d %>% mutate(myaxis = paste0(class, "\n", num)), 
+       aes(x = value, y = myaxis, fill = !!as.symbol(i))) +
+  geom_boxplot() +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"),
+                               COL == 6 ~ scale_y_discrete(guide = "none"),
+                               COL == 7 ~ scale_y_discrete(guide = "none"))) +
+  #scale_x_continuous("", limits = quantile(d$value, c(0.1, 0.9), na.rm = T)) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(title = "Wastewater Curacao",
+       subtitle = "Boxplots for nutrients and EC")
+
+```
+
+#### Summary
+
+Summary: 
+Most notable:
+
+- Discharge through rooien has similar chemical composition as groundwater, though with lower NO3 and higher PO4 (wastewater influence?)
+- 
+
+```{r CatchmentPiscadera, echo=F}
+# selecting data
+i <- "subtype"
+d <- data %>%
+  filter(Catchment == "Piscadera",
+         year %in% c(2021, 2022),
+         #sampletype %in% c("groundwater", "surface runoff"),
+         #!sampletype %in% c("rainwater", "tapwater"),
+         parameter %in% c("EC", "pH", "NH4", "NO3", "PO4", "E.coli")) %>%
+  # change EC from uS/cm to mS/cm
+  mutate(value = ifelse(parameter == "EC", value / 1000, value),
+         units = ifelse(parameter == "EC", "mS/cm", units)) %>%
+  mutate(units = ifelse(parameter == "E.coli", "CFU/dl", units)) %>%
+  group_by(!!as.symbol(i), parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  ungroup() %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [mS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]",
+                                                  "E.coli [CFU/dl]")))
+
+# vertical boxplots
+ggplot(d %>% mutate(myaxis = paste0(!!as.symbol(i), "\n", num)), 
+       aes(x = value, y = myaxis, fill = !!as.symbol(i))) +
+  geom_boxplot() +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"),
+                               COL == 6 ~ scale_y_discrete(guide = "none"),
+                               COL == 7 ~ scale_y_discrete(guide = "none"))) +
+  #scale_x_continuous("", limits = quantile(d$value, c(0.1, 0.9), na.rm = T)) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(title = "Catchment Piscadera water types",
+       subtitle = "Boxplots for nutrients and EC, 2021-2022")
+
+
+```
+### Catchment Zapateer and Klein Kwartier
+
+#### Surface runoff
+
+```{r, echo=F}
+# surface runoff in Zapateer catchment
+d <- data %>%
+  filter(Catchment %in% c("Zapateer", "Klein Kwartier"),
+         sampletype == "surface runoff",
+         parameter %in% c("EC", "NH4", "NO3", "PO4")) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [uS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]",
+                                                  "E.coli [CFU/dl]"))) %>%
+  mutate(class = case_when(
+    samplecode %in% c("SR018", "SR023", "SR027", "SR032") ~ "Klein Kwartier",
+    samplecode %in% c("SR009", "SR024", "SR025") ~ "Zapateer",
+    #samplecode %in% c("SR031") ~ "upstream rooi discharge",
+    TRUE ~ "")) %>%
+  mutate(class = factor(class, levels = c("Klein Kwartier",
+                                          "Zapateer")))
+
+d <- d[order(d$class, d$samplecode, decreasing = T), ]
+d$samplecode = factor(d$samplecode, levels = unique(d$samplecode))
+
+# ggplot(d, aes(x = value, y = samplecode, fill = subtype)) +
+#   geom_col() +
+#   facet_wrap(~ parameter, scales = "free") +
+#   scale_y_discrete("") +
+#   scale_x_continuous("") +
+#   theme_bw() +
+#   theme(legend.position = "bottom")
+
+ggplot(d, aes(x = value, y = reorder(samplecode, class), fill = class)) +
+  geom_col() +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"),
+                               COL == 6 ~ scale_y_discrete(guide = "none"),
+                               COL == 7 ~ scale_y_discrete(guide = "none"))) +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(title = "Zapateer & Klein Kwartier Catchment",
+       subtitle = "Surface runoff 2022")
+
+```
+
+#### groundwater
+
+```{r, echo=F}
+# groundwater in Piscadera Catchment
+## 2022 only 
+d <- data %>%
+  filter(Catchment %in% c("Zapateer", "Klein Kwartier"),
+         sampletype == "groundwater",
+         year %in% c(2022),
+         samplecode != "GW020B",
+         parameter %in% c("EC", "NO3", "PO4")) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [uS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]",
+                                                  "E.coli [CFU/dl]"))) %>%
+  mutate(class = case_when(
+    samplecode %in% c("GW072", "GW073", "GW081", "GW098", "GW113") ~ "Upper Klein Kwartier",
+    samplecode %in% c("GW074", "GW101", "GW107") ~ "Middle Zapateer",
+    samplecode %in% c("GW078", "GW079", "GW080", "GW092", "GW093") ~ "Outlet catchment",
+    #samplecode %in% c("SR031") ~ "upstream rooi discharge",
+    TRUE ~ "")) %>%
+  mutate(class = factor(class, levels = c("Upper Klein Kwartier",
+                                          "Middle Zapateer",
+                                          "Outlet catchment")))
+
+d <- d[order(d$class, d$samplecode, decreasing = T), ]
+d$samplecode = factor(d$samplecode, levels = unique(d$samplecode))
+
+ggplot(d, aes(x = value, y = reorder(samplecode, class), fill = class)) +
+  geom_col() +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(title = "Zapateer & Klein Kwartier Catchment",
+       subtitle = "Groundwater 2022")
+
+# ggplot(d, aes(x = value, y = reorder(samplecode, -class), fill = sampletype)) +
+#   geom_col() +
+#   facet_wrap(~ parameter, scales = "free") +
+#   scale_y_discrete("") +
+#   scale_x_continuous("") +
+#   theme_bw() +
+#   theme(legend.position = "bottom",
+#         legend.title = element_blank()) +
+#   labs(title = "Piscadera Catchment",
+#        subtitle = "Groundwater 2022")
+
+```
+#### Summary
+
+
+```{r CatchmentZapateer, echo=F}
+# selecting data
+i <- "subtype"
+d <- data %>%
+  filter(Catchment %in% c("Klein Kwartier", "Zapateer"),
+         year %in% c(2021, 2022),
+         !sampletype %in% c("tapwater"),
+         parameter %in% c("EC", "NH4", "NO3", "PO4")) %>%
+  # change EC from uS/cm to mS/cm
+  mutate(value = ifelse(parameter == "EC", value / 1000, value),
+         units = ifelse(parameter == "EC", "mS/cm", units)) %>%
+  group_by(!!as.symbol(i), parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  ungroup() %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [mS/cm]", 
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]")))
+
+# vertical boxplots
+ggplot(d %>% mutate(myaxis = paste0(!!as.symbol(i), "\n", num)), 
+       aes(x = value, y = myaxis, fill = !!as.symbol(i))) +
+  geom_boxplot() +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"))) +
+  #scale_x_continuous("", limits = quantile(d$value, c(0.1, 0.9), na.rm = T)) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(title = "Catchment Klein Kwartier water types",
+       subtitle = "Boxplots for nutrients and EC, 2021-2022")
+
+```
+
+
+### Catchment Santa Martha
+
+#### Surface runoff
+
+```{r, echo=F}
+# surface runoff in Zapateer catchment
+d <- data %>%
+  filter(Catchment == "Soto Santa Martha",
+         sampletype %in% c("surface runoff", "surfacewater"),
+         parameter %in% c("EC", "NH4", "NO3", "PO4")) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [uS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]",
+                                                  "E.coli [CFU/dl]"))) %>%
+  mutate(class = case_when(
+    samplecode %in% c("SR022", "SW007", "SW008") ~ "Middle catchment",
+    samplecode %in% c("SR021", "SR033") ~ "Outlet catchment",
+    #samplecode %in% c("SR031") ~ "upstream rooi discharge",
+    TRUE ~ "")) %>%
+  mutate(class = factor(class, levels = c("Middle catchment",
+                                          "Outlet catchment")))
+
+d <- d[order(d$class, d$samplecode, decreasing = T), ]
+d$samplecode = factor(d$samplecode, levels = unique(d$samplecode))
+
+# ggplot(d, aes(x = value, y = samplecode, fill = subtype)) +
+#   geom_col() +
+#   facet_wrap(~ parameter, scales = "free") +
+#   scale_y_discrete("") +
+#   scale_x_continuous("") +
+#   theme_bw() +
+#   theme(legend.position = "bottom")
+
+ggplot(d, aes(x = value, y = samplecode, fill = class)) +
+  geom_col() +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"),
+                               COL == 6 ~ scale_y_discrete(guide = "none"),
+                               COL == 7 ~ scale_y_discrete(guide = "none"))) +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(title = "Santa Martha Catchment",
+       subtitle = "Surface runoff 2022")
+
+```
+
+#### Groundwater
+
+```{r, echo=F}
+# surface runoff in Zapateer catchment
+d <- data %>%
+  filter(Catchment == "Soto Santa Martha",
+         year == 2022,
+         sampletype %in% c("groundwater", "spring"),
+         parameter %in% c("EC", "NH4", "NO3", "PO4")) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [uS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]",
+                                                  "E.coli [CFU/dl]"))) %>%
+  mutate(class = case_when(
+    samplecode %in% c("GW087") ~ "Upper catchment",
+    samplecode %in% c("GW082", "GW084", "GW086", "GW088", "SP003") ~ "Middle catchment",
+    samplecode %in% c("GW083", "GW085") ~ "Outlet catchment",
+    #samplecode %in% c("SR031") ~ "upstream rooi discharge",
+    TRUE ~ "")) %>%
+  mutate(class = factor(class, levels = c("Upper catchment",
+                                          "Middle catchment",
+                                          "Outlet catchment")))
+
+d <- d[order(d$class, d$samplecode, decreasing = T), ]
+d$samplecode = factor(d$samplecode, levels = unique(d$samplecode))
+
+# ggplot(d, aes(x = value, y = samplecode, fill = subtype)) +
+#   geom_col() +
+#   facet_wrap(~ parameter, scales = "free") +
+#   scale_y_discrete("") +
+#   scale_x_continuous("") +
+#   theme_bw() +
+#   theme(legend.position = "bottom")
+
+ggplot(d, aes(x = value, y = samplecode, fill = class)) +
+  geom_col() +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"),
+                               COL == 6 ~ scale_y_discrete(guide = "none"),
+                               COL == 7 ~ scale_y_discrete(guide = "none"))) +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(title = "Santa Martha Catchment",
+       subtitle = "Groundwater 2022")
+
+```
+
+#### Summary
+
+```{r CatchmentSantaMartha, echo=F}
+# selecting data
+i <- "subtype"
+d <- data %>%
+  filter(Catchment %in% c("Soto Santa Martha"),
+         year %in% c(2021, 2022),
+         !sampletype %in% c("tapwater", "rainwater"),
+         parameter %in% c("EC", "NH4", "NO3", "PO4")) %>%
+  # change EC from uS/cm to mS/cm
+  mutate(value = ifelse(parameter == "EC", value / 1000, value),
+         units = ifelse(parameter == "EC", "mS/cm", units)) %>%
+  group_by(!!as.symbol(i), parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  ungroup() %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [mS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]")))
+
+# vertical boxplots
+ggplot(d %>% mutate(myaxis = paste0(!!as.symbol(i), "\n", num)), 
+       aes(x = value, y = myaxis, fill = !!as.symbol(i))) +
+  geom_boxplot() +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"))) +
+  #scale_x_continuous("", limits = quantile(d$value, c(0.1, 0.9), na.rm = T)) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(title = "Catchment Santa Martha water types",
+       subtitle = "Boxplots for nutrients and EC, 2021-2022")
+
+```
+
+### Difference catchments
+
+```{r CatchmentDifference, echo=F}
+# selecting data
+i <- "sampletype"
+
+d <- data %>%
+  filter(!is.na(Catchment),
+         year %in% c(2021, 2022),
+         parameter %in% c("EC", "pH", "NH4", "NO3", "PO4")) %>%
+  # merge Zapateer and Klein Kwartier catchment
+  mutate(Catchment = case_when(
+    Catchment %in% c("Zapateer", "Klein Kwartier") ~ "Zapateer & Klein Kwartier",
+    TRUE ~ Catchment)) %>%
+  mutate(sampletype = case_when(
+    samplecode %in% c("SW007", "SW008") ~ "surface runoff",
+    TRUE ~ sampletype)) %>%
+  filter(!sampletype %in% c("tapwater", "rainwater", "wastewater", "surfacewater")) %>%
+  # change EC from uS/cm to mS/cm
+  # mutate(value = ifelse(parameter == "EC", value / 1000, value),
+  #        units = ifelse(parameter == "EC", "mS/cm", units)) %>%
+  group_by(Catchment, !!as.symbol(i), parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  ungroup() %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [uS/cm]", 
+                                                  "pH [-]",
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]"))) 
+
+
+# ggplot(d %>% filter(parameter == "EC [mS/cm]"), 
+#        aes(x = value, y = !!as.symbol(i), fill = !!as.symbol(i))) +
+#   geom_boxplot() + 
+#   scale_y_discrete("") +
+#   scale_x_continuous("") +
+#   facet_wrap(~ Catchment, nrow = 1) +
+#   theme_bw() +
+#   theme(legend.position = "none") +
+#   labs(title = "Catchment differences",
+#        subtitle = "Boxplots EC")
+# 
+# ggplot(d %>% mutate(myaxis = paste0(!!as.symbol(i), "\n", num)), 
+#        aes(x = value, y = myaxis, fill = Catchment)) +
+#   geom_boxplot() +
+#   scale_y_discrete("") +
+#   scale_x_continuous("") +
+#   facet_wrap(~ parameter, scales = "free", nrow = 1) +
+#   facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+#                                COL == 3 ~ scale_y_discrete(guide = "none"),
+#                                COL == 4 ~ scale_y_discrete(guide = "none"),
+#                                COL == 5 ~ scale_y_discrete(guide = "none"))) +
+#   #scale_x_continuous("", limits = quantile(d$value, c(0.1, 0.9), na.rm = T)) +
+#   theme_bw() +
+#   theme(legend.position = "bottom",
+#         legend.title = element_blank()) +
+#   labs(title = "Catchment Santa Martha water types",
+#        subtitle = "Boxplots for nutrients and EC")
+
+d <- d[order(d$Catchment, d$num), ]
+d$num = factor(d$num, levels = unique(d$num))
+
+p1 <- ggplot(d %>% filter(parameter == "EC [uS/cm]"), 
+       aes(x = num, y = value, fill = Catchment)) +
+  geom_boxplot() +
+  scale_x_discrete("") +
+  scale_y_continuous("EC [uS/cm]") +
+  facet_wrap(~ sampletype, scales = "free", nrow = 1) +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()
+  )
+
+p2 <- ggplot(d %>% filter(parameter == "NO3 [mg/l]"), 
+       aes(x = num, y = value, fill = Catchment)) +
+  geom_boxplot() +
+  scale_x_discrete("") +
+  scale_y_continuous("NO3 [mg/l]") +
+  facet_wrap(~ sampletype, scales = "free", nrow = 1) +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()
+  )
+
+p3 <- ggplot(d %>% filter(parameter == "PO4 [mg/l]"), 
+       aes(x = num, y = value, fill = Catchment)) +
+  geom_boxplot() +
+  scale_x_discrete("") +
+  scale_y_continuous("PO4 [mg/l]") +
+  facet_wrap(~ sampletype, scales = "free", nrow = 1) +
+  theme_bw() +
+  theme(legend.position = "none",
+        # axis.text.x = element_blank(),
+        # axis.ticks.x = element_blank()
+        )
+
+grobs <- ggplotGrob(p3)$grobs
+legend <- grobs[[which(sapply(grobs, function(x) x$name) == "guide-box")]]
+
+pgrid <- plot_grid(p1, p2, p3, nrow = 3,
+                   labels = "AUTO")
+pgrid
+plot_grid(pgrid, legend, nrow = 2, rel_heights = c(1, 0.1))
+
+```
+
+Boxplots 2nd fieldwork for EC, pH, HCO3, NO3, NH4, PO4. 
+
+```{r, echo=F}
+data %>%
+  filter(year == 2022) %>%
+  filter(parameter %in% c("EC", "pH", "NO3", "PO4", "NH4", "HCO3")) %>%
+  group_by(subtype) %>%
+  ggplot(., aes(x = subtype, y = value, fill = subtype)) +
+  geom_boxplot() +
+  scale_x_discrete("") +
+  scale_y_continuous("") +
+  theme_bw() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  facet_wrap(facets = "parameter", scales = "free")
+
+
+```
+
+### Groundwater influenced by septic tanks
+
+
+```{r}
+d <- data %>%
+  filter(sampletype == "groundwater",
+         year %in% c(2021, 2022),
+         parameter == "NH4",
+         value > 1)
+
+```
+
+
+### Nitrate
+
+Comparing nitrate concentrations in groundwater for the years 1992, 2021 and 2022.
+
+```{r nitrate I, echo=FALSE}
+d <- data %>%
+  filter(parameter == "NO3",
+         sampletype == "groundwater") %>%
+  select(year, samplecode, value, limit_symbol)
+
+ggplot(d, aes(x = as.factor(year), y = value, fill = as.factor(year))) +
+  geom_boxplot() +
+  scale_y_continuous("NO3 [mg/L]") +
+  #coord_cartesian(ylim = c(0, 200)) +
+  scale_x_discrete("") +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ggtitle("Nitrate concentrations in groundwater, Curacao")
+
+d %>%
+  ggplot(., aes(x = value, group = year, fill = as.character(year))) +
+  geom_histogram(binwidth = 10, alpha = 0.5, position = "identity") +
+  #geom_density(alpha = 0.2) +
+  theme_bw()
+
+mu <- d %>% group_by(year) %>%
+  summarise(grp.mean = mean(value))
+
+d %>%
+  ggplot(., aes(x = value, group = year, fill = as.character(year))) +
+  geom_density(alpha = 0.4) +
+  geom_vline(data = mu, aes(xintercept = grp.mean, color = as.character(year)),
+             linetype = "dashed") +
+  scale_x_continuous("NO3 [mg/l]") +
+  #coord_cartesian(xlim = c(0, 100)) +
+  theme_bw()
+
+```
+
+
+Comparing multiple parameters for 2021 - 2022 groundwater samples
+
+```{r, echo=F}
+d <- data %>%
+  filter(parameter %in% c("EC", "pH", "HCO3", "NO3", "PO4", "NH4", "DOC"),
+         sampletype == "groundwater") %>%
+  mutate(units = case_when(
+    parameter == "pH" ~ "-",
+    TRUE ~ units)) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  select(year, samplecode, parameter, value, limit_symbol)
+
+ggplot(d, aes(x = as.factor(year), y = value)) +
+  geom_boxplot() +
+  scale_y_continuous("") +
+  # coord_cartesian(ylim = c(0, 200)) +
+  scale_x_discrete("") +
+  theme_bw() +
+  # theme(legend.position = "none") +
+  # ggtitle("Nitrate concentrations in groundwater, Curacao") +
+  facet_wrap(facets = "parameter", scales = "free") +
+  labs(title = "Groundwater parameters 1977-2022")
+
+# plotting mean + median for all years
+d <- data %>%
+  filter(parameter %in% c("EC", "pH", "NO3", "PO4", "NH4", "DOC"),
+         sampletype == "groundwater") %>%
+    mutate(units = case_when(
+    parameter == "pH" ~ "-",
+    TRUE ~ units)) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  group_by(year, parameter) %>%
+  mutate(mean = mean(value, na.rm = T),
+         median = median(value, na.rm = T)) %>%
+  ungroup() %>%
+  pivot_longer(cols = mean:median,
+               values_to = "value2",
+               names_to = "stats") %>%
+  select(year, parameter, stats, value2) %>%
+  distinct()
+
+ggplot(d, aes(x = as.factor(year), y = value2, fill = stats)) +
+  geom_col(position = "dodge") +
+  scale_x_discrete("") +
+  scale_y_continuous("") +
+  facet_wrap(facets = "parameter", scales = "free") +
+  theme_bw() +
+  labs(title = "")
+
+
+```
+## Groundwater diff 2021-2022
+
+```{r groundwaterDiff, echo=F, fig.width=4}
+data %>%
+  filter(sampletype == "groundwater",
+         year %in% c(2021, 2022),
+         parameter %in% c("EC", "NO3", "PO4")) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  group_by(year, parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  mutate(myaxis = paste0(year, "\n", num)) %>%
+  ggplot(., aes(x = myaxis, y = value, fill = as.factor(year))) +
+  geom_boxplot() +
+  scale_y_continuous("") +
+  scale_x_discrete("") +
+  facet_wrap(~ parameter, scales = "free") +
+  theme_bw() +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom") +
+  labs(title = "Groundwater comparison 2021-2022")
+
+data %>%
+  filter(sampletype == "groundwater",
+         year %in% c(2021, 2022),
+         parameter %in% c("PO4")) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  group_by(year, parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  mutate(myaxis = paste0(year, "\n", num)) %>%
+  ggplot(., aes(x = myaxis, y = value, fill = as.factor(year))) +
+  geom_boxplot() +
+  scale_y_continuous("") +
+  scale_x_discrete("") +
+  coord_cartesian(ylim = c(0, 1.0))+
+  facet_wrap(~ parameter, scales = "free") +
+  theme_bw() +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom") +
+  labs(title = "Groundwater comparison 2021-2022")
+
+```
+
+## Same wells 2021-2022
+
+For the same wells measured over time: and GW071: Herb garden open well GW024 and GW072: Klein Kwartier well 5Z14(B) GWXXX and GW073: Geert GWXXX and GW074:
+
+```{r, echo=F}
+# only wells with multiple measurements
+d <- data %>%
+  #filter(!samplecode %in% c("GW014B", "GW055B")) %>%
+  group_by(putcode) %>%
+  mutate(yearly_measurement = n_distinct(samplecode),
+         samples = paste(unique(samplecode), collapse = ", ")) %>%
+  ungroup() 
+
+dat <- d %>%
+  filter(parameter == "EC",
+         yearly_measurement > 1,
+         putcode != "",
+         # some wells in 1992 have 2 measurements, omit those
+         !putcode %in% c("4n80", "5n247")) %>%
+  select(putcode, samples, year, parameter, value, yearly_measurement) %>%
+  # distinct() %>%
+  group_by(year, putcode, parameter) %>%
+  mutate(avg = mean(value, na.rm = T)) %>%
+  ungroup() %>%
+  select(-c(value, samples)) %>%
+  distinct() %>%
+  pivot_wider(names_from = year,
+              values_from = avg) %>% 
+  filter(!is.na(`2021`),
+         !is.na(`2022`))
+
+## Use paired t-test or paired Wilcox-test
+
+ggplot(dat, aes(x = `2022`, y = `2021`)) +
+  geom_abline(slope = 1) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Comparison of EC [uS/cm]",
+       subtitle = "For groundwater between 2021-2022")
+
+sub <- data %>%
+  filter(putcode %in% dat$putcode,
+         year %in% c(2021, 2022),
+         parameter %in% c("EC", "NO3", "PO4")) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  group_by(year, parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  ungroup()
+
+ggplot(sub, aes(x = value, y = putcode, fill = as.factor(year))) +
+  geom_col(stat = "identity", position = "dodge") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"))) +
+  scale_x_continuous("") +
+  scale_y_discrete("") +
+  theme_bw() +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom") +
+  labs(title = "Same wells measured in 2021 and 2022",
+       subtitle = "Nutrients and EC")
+
+ggplot(sub %>%
+         mutate(myaxis = paste0(year, "\n", num)), 
+       aes(x = myaxis, y = value, fill = as.factor(year))) +
+  geom_boxplot() +
+  scale_y_continuous("") +
+  scale_x_discrete("") +
+  theme_bw() +
+  facet_wrap(~ parameter, scales = "free") +
+  labs(title = "Same wells 2021 - 2022",
+       subtitle = "Boxplots for EC, NO3 and PO4") +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom") 
+
+# EC
+# dat %>%
+#   filter(parameter == "EC") %>%
+#   t.test(`2021` ~ `2022`, data = .,)
+
+```
+
+### Phosphate
+
+```{r phosphate I, echo=FALSE}
+d <- data %>%
+  filter(parameter == "PO4",
+         sampletype == "groundwater") %>%
+  select(year, samplecode, value, limit_symbol)
+
+ggplot(d, aes(x = as.factor(year), y = value)) +
+  geom_boxplot() +
+  scale_y_continuous("PO4 [mg/L]") +
+  #coord_cartesian(ylim = c(0, 200)) +
+  scale_x_discrete("") +
+  theme_bw() +
+  ggtitle("Phosphate concentrations in groundwater, Curacao")
+```
+
+
+## Nutrients total
+Mean EC and nutrients concentrations per watertype for 2021 and 2022:
+
+```{r}
+# parameter to group by
+i <- "sampletype"
+d <- data %>%
+  filter(year %in% c(2021, 2022),
+         parameter %in% c("EC", "NH4", "NO3", "PO4", "DOC")) %>%
+  # change EC from uS/cm to mS/cm
+  mutate(value = ifelse(parameter == "EC", value / 1000, value),
+         units = ifelse(parameter == "EC", "mS/cm", units)) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  group_by(!!as.symbol(i), parameter) %>%
+  mutate(mean = mean(value, na.rm = T),
+         num = factor(paste0("n=", n_distinct(samplecode)))) %>%
+  ungroup() %>%
+  select(!!as.symbol(i), parameter, mean, num) %>%
+  distinct() %>%
+  mutate(parameter = factor(parameter, levels = c("EC [mS/cm]", 
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]")))
+
+# horizontal bar plots
+ggplot(d %>%
+         mutate(myaxis = paste0(!!as.symbol(i), "\n", num)), 
+       aes(x = mean, y = myaxis, fill = myaxis)) +
+  geom_col() +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"))) +
+  theme_bw() +
+  theme(panel.grid.major.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "none") +
+  labs(title = "Water types on Curacao",
+       subtitle = "mean concentrations for nutrients and electrical conductivity")
+```
+
+When looking at subtypes (e.g. wastewater distinguishes between treated and untreated):
+
+
+```{r}
+# parameter to group by
+i <- "subtype"
+d <- data %>%
+  filter(year %in% c(2021, 2022),
+         parameter %in% c("EC", "NH4", "NO3", "PO4", "DOC")) %>%
+  # change EC from uS/cm to mS/cm
+  mutate(value = ifelse(parameter == "EC", value / 1000, value),
+         units = ifelse(parameter == "EC", "mS/cm", units)) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  group_by(!!as.symbol(i), parameter) %>%
+  mutate(mean = mean(value, na.rm = T),
+         num = factor(paste0("n=", n_distinct(samplecode)))) %>%
+  ungroup() %>%
+  select(!!as.symbol(i), parameter, mean, num) %>%
+  distinct() %>%
+  mutate(parameter = factor(parameter, levels = c("EC [mS/cm]", 
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]")))
+
+# horizontal bar plots
+ggplot(d %>%
+         mutate(myaxis = paste0(!!as.symbol(i), "\n", num)), 
+       aes(x = mean, y = myaxis, fill = myaxis)) +
+  geom_col() +
+  scale_y_discrete("") +
+  scale_x_continuous("") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"))) +
+  theme_bw() +
+  theme(panel.grid.major.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "none") +
+  labs(title = "Water subtypes on Curacao",
+       subtitle = "mean concentrations for nutrients and electrical conductivity")
+```
+
+
+## Boxplots:
+
+
+
+```{r BoxplotsNutrients}
+## boxplots
+i <- "sampletype"
+d <- data %>%
+  filter(year %in% c(2021, 2022),
+         parameter %in% c("EC", "NH4", "NO3", "PO4", "DOC"),
+         sampletype != "seawater") %>%
+  # change EC from uS/cm to mS/cm
+  mutate(value = ifelse(parameter == "EC", value / 1000, value),
+         units = ifelse(parameter == "EC", "mS/cm", units)) %>%
+  group_by(!!as.symbol(i), parameter) %>%
+  mutate(num = paste0("n=", n_distinct(samplecode))) %>%
+  ungroup() %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  mutate(parameter = factor(parameter, levels = c("EC [mS/cm]", 
+                                                  "NH4 [mg/l]", 
+                                                  "NO3 [mg/l]", 
+                                                  "PO4 [mg/l]", 
+                                                  "DOC [mg/l]")))
+
+# vertical boxplots
+ggplot(d %>% mutate(myaxis = paste0(!!as.symbol(i), "\n", num)), 
+       aes(x = value, y = myaxis, fill = sampletype)) +
+  geom_boxplot(outlier.shape = NA) +
+  scale_y_discrete("") +
+  facet_wrap(~ parameter, scales = "free", nrow = 1) +
+  facetted_pos_scales(y = list(COL == 2 ~ scale_y_discrete(guide = "none"),
+                               COL == 3 ~ scale_y_discrete(guide = "none"),
+                               COL == 4 ~ scale_y_discrete(guide = "none"),
+                               COL == 5 ~ scale_y_discrete(guide = "none"))) +
+  #scale_x_continuous("", limits = quantile(d$value, c(0.1, 0.9), na.rm = T)) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(title = "Water types on Curacao",
+       subtitle = "Boxplots without outliers for nutrients and EC")
+
+```
+
+
+## Radon 
+
+Radon activities total
+
+```{r radon, echo=F}
+d <- data %>%
+  filter(sampletype == "groundwater",
+         parameter == "Rn") 
+sample_size <- d %>%
+  group_by(parameter) %>% summarise(num = n())
+
+# plotting 
+p1 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(parameter, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    #geom_violin(width = 1.4) +
+    #geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    theme_bw()
+
+p2 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(parameter, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    #geom_violin(width = 1.4) +
+    #geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    coord_cartesian(ylim = c(0, 10000)) +
+    theme_bw()
+
+title <- ggplot() +
+  labs(title = "Radon concentrations groundwater Curacao")
+
+plot_grid(title, plot_grid(p1, p2, labels = "AUTO"), ncol = 1, rel_heights = c(0.1, 1))
+```
+
++ comparision 2021 / 2022
+
+```{r}
+d <- data %>%
+  filter(sampletype == "groundwater",
+         year %in% c(2021, 2022),
+         parameter == "Rn",
+         !samplecode %in% c("SP001B", "GW077_d")) 
+sample_size <- d %>%
+  group_by(parameter, year) %>% 
+  summarise(num = n())
+
+# is there a significant difference in Rn concentration between the 2 years?
+# 0-hypothesis: the concentrations are the same
+# 
+t.test(value ~ year, data = d)
+# p-value = 0.1251 -->  this is > 0.05 , thus not statistically significant..
+
+p1 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(year, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    #geom_violin(width = 1.4) +
+    #geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    geom_signif(comparisons = list(c("2021\nn=23", "2022\nn=40")), 
+                map_signif_level=TRUE) +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    #coord_cartesian(ylim = c(0, 10)) +
+    theme_bw()
+
+p2 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(year, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    #geom_violin(width = 1.4) +
+    #geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    geom_signif(comparisons = list(c("2021\nn=23", "2022\nn=40")), 
+              map_signif_level=TRUE) +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    coord_cartesian(ylim = c(0, 10000)) +
+    theme_bw()
+
+title <- ggplot() +
+  labs(title = "Radon concentrations difference 2021-2022")
+
+plot_grid(title, plot_grid(p1, p2, labels = "AUTO"), ncol = 1, rel_heights = c(0.1, 1))
+
+```
+
+Difference in Rn activity on the same location measured in 2021 and 2022.
+
+```{r, echo=F}
+data %>%
+  filter(parameter == "Rn",
+         putcode != "") %>%
+  group_by(putcode) %>%
+  mutate(same = length(value)) %>%
+  ungroup() %>%
+  filter(same > 1) %>%
+  ggplot(., aes(x = as.factor(year), y = value)) +
+  geom_col() +
+  scale_y_continuous("Rn [Bq/m3]") +
+  scale_x_discrete("") +
+  theme_bw() +
+  facet_wrap(facets = "putcode", scales = "free") +
+  labs(title = "Rn measurements in same wells")
+  
+
+```
+
+Spatial pattern in Rn concentrations, combined for 2021-2022. 
+
+```{r RnSpatial, echo=F}
+d <- data %>%
+  filter(sampletype == "groundwater",
+         !is.na(value),
+         parameter == "Rn",
+         !samplecode %in% c("SP001B", "GW077_d")) 
+
+# spatial pattern
+# Radon map
+
+ggplot() +
+  geom_sf(data = cur_geology, aes(fill = Field), alpha = 0.5) +
+  scale_fill_manual(name = "Geology", 
+                    values = c("yellowgreen", "purple4", "khaki2", "orange", "lightskyblue1")) +
+  new_scale_fill() +
+  geom_sf(data = pts %>% filter(parameter == "Rn",
+                             sampletype == "groundwater") %>%
+            mutate(value = value / 1000),
+       aes(fill = cut(value, breaks = c(0, 1, 2, 5, 10, 50))),
+       colour = "black",
+       pch = 21,
+       size = 2) +
+  scale_fill_brewer(type = "qual",
+                    palette = "RdGy",
+                    name = "Rn [Bq/l]",
+                    direction = -1,
+                    na.value = "black",
+                    labels = c("0 - 1",
+                               "1 - 2",
+                               "2 - 5",
+                               "5 - 10",
+                               ">10")) +
+  coord_sf(xlim = c(-69.15, -68.75),
+           ylim = c(12.0, 12.4)) +
+  #theme(legend.position = c(0.75, 0.8)) +
+  ggtitle("Radon concentrations in groundwater on Curacao") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        size = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+
+
+```
+
+
+
+```{r}
+# other sampletypes ~ surface runoff/ discharge
+d <- data %>%
+  filter(parameter == "Rn",
+         !sampletype %in% c("air", "Mi", "Ta", "rainwater"))
+sample_size <- d %>%
+  group_by(parameter, year) %>% 
+  summarise(num = paste0("n=",n()))
+
+ggplot(d, aes(x = sampletype, y = value)) +
+  geom_boxplot() +
+  scale_y_continuous("Rn [Bq/m3]") +
+  scale_x_discrete("") +
+  coord_cartesian(ylim = c(0, 1000)) +
+  theme_bw() +
+  labs(title = "Rn concentrations for different sampletypes")
+
+# ocean samples
+
+
+
+```
+

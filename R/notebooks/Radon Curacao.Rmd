@@ -1,0 +1,549 @@
+---
+title: "Radon Curacao"
+author: "Mike Wit"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Loading packages
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, openxlsx, ggmap, sf, cowplot, knitr, 
+               viridis, ggsignif, ggnewscale, ggh4x, ggspatial,
+               ggpubr, car, multcomp)
+
+# load data
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/final_merged/" 
+
+data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
+meta <- openxlsx::read.xlsx(paste0(input, "metadata_2021_2022.xlsx"))
+
+# importing GIS layers
+input_GIS <- "C:/Users/mikewit/Documents/SEALINK/GIS/SEALINK/"
+
+cur_coastline <- st_read(paste0(input_GIS,
+                                "Layers/Topography/CUR_Coastline.shp")) %>%
+  st_transform(crs = 4326)
+cur_geology <- st_read(paste0(input_GIS,
+                              "Layers/Geology/Geology Shapefile EATH.shp")) %>%
+  st_transform(crs = 4326) 
+
+catchments <- st_read(paste0(input_GIS,
+                             "Layers/Catchments/Curacao_SAGA_catchments_Stahler_6.shp")) %>%
+  st_transform(crs = 4326)
+
+###############################################################################
+# editing data
+###############################################################################
+
+# add catchment column to data from metadata
+pts <- st_as_sf(data %>% 
+                  filter(!is.na(xcoord)) %>%
+                  select(samplecode, xcoord, ycoord), 
+                coords = c("xcoord", "ycoord"),
+                crs = 4326, agr = "constant") 
+
+catchments <- st_make_valid(catchments)
+pts_catch <- st_intersection(pts, catchments %>% select(Catchment) %>% filter(!is.na(Catchment))) %>%
+  st_drop_geometry() %>%
+  distinct()
+
+# add catchment and geology to data file
+data <- data %>%
+  left_join(., pts_catch) %>%
+  left_join(., meta %>% select(samplecode, geology, geology_abr))
+
+
+
+# convert dataset to sf point object for plotting
+pts <- st_as_sf(data %>% filter(!is.na(xcoord)), coords = c("xcoord", "ycoord"),
+                crs = 4326, agr = "constant") 
+
+```
+
+## Intro
+
+What to expect:
+
+-   Total Rn concentrations / activities
+-   Comparision in Rn activities between 2021 and 2022
+-   Comparison for Rn in same wells measured in 2021 and 2022
+-   Different sample types
+-   Spatial Rn pattern on Curacao
+    -   Distance to coast
+    -   Well depth
+    -   Sampling method
+    -   Along flow path: Rn production vs half-life time degradation
+
+## Rn activities
+
+### Water types
+
+```{r RnWatertypes, echo=F, message=F}
+# other sampletypes ~ surface runoff/ discharge
+d <- data %>%
+  filter(parameter == "Rn",
+         !sampletype %in% c("air", "Mi", "Ta", "rainwater"))
+sample_size <- d %>%
+  group_by(parameter, year) %>% 
+  summarise(num = paste0("n=",n()))
+
+p1 <- ggplot(d, aes(x = sampletype, y = value, fill = sampletype)) +
+  geom_boxplot() +
+  scale_y_continuous("Rn [Bq/m3]") +
+  scale_x_discrete("") +
+  theme_bw() +
+  theme(legend.position = "none")
+  # labs(title = "Rn concentrations for different sampletypes")
+
+p2 <- ggplot(d, aes(x = sampletype, y = value, fill = sampletype)) +
+  geom_boxplot() +
+  scale_y_continuous("Rn [Bq/m3]") +
+  scale_x_discrete("") +
+  coord_cartesian(ylim = c(0, 1000)) +
+  theme_bw() +
+  theme(legend.position = "none")
+  # labs(title = "Rn concentrations for different sampletypes")
+
+title <- ggplot() +
+  labs(title = "Rn concentrations for different water types")
+
+plot_grid(title, plot_grid(p1, p2, labels = "AUTO"), ncol = 1, rel_heights = c(0.1, 1))
+
+# ocean samples
+
+
+
+```
+
+### Groundwater
+Total radon activities for groundwater in 2021 and 2022 combined.
+
+Additionally, radon concentrations in groundwater can potentially be used to determine travel times (*source*), detect fractures (*source*), ...
+
+```{r radon, echo=F, message=FALSE}
+d <- data %>%
+  filter(sampletype == "groundwater",
+         parameter == "Rn",
+         !samplecode %in% c("GW077_d", "SP001B")) 
+sample_size <- d %>%
+  group_by(parameter) %>% summarise(num = n())
+
+# plotting 
+p1 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(parameter, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    theme_bw()
+
+p2 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(parameter, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    coord_cartesian(ylim = c(0, 10000)) +
+    theme_bw()
+
+title <- ggplot() +
+  labs(title = "Radon concentrations groundwater Curacao, 2021-2022")
+
+plot_grid(title, plot_grid(p1, p2, labels = "AUTO"), ncol = 1, rel_heights = c(0.1, 1))
+```
+
+## Comparision 2021 - 2022
+
+Below the density plot for radon activities for 2021 and the wetter year 2022 are shown. For 2022 a larger portion of samples are found in the lower activities range when compared to 2022. 
+
+```{r, echo=F}
+
+ggplot(d, aes(x = value, fill = as.factor(year))) +
+  geom_density(alpha = 0.5) +
+  scale_x_continuous("Bq/m3") +
+  theme_bw() +
+  theme(legend.title = element_blank()) +
+  labs(title = "Radon activities Curacao",
+       subtitle = "Density plot for groundwater samples 2021-2022")
+
+```
+
+Next, it should be tested if the groundwater radon concentrations between 2021 and 2022 are significantly different. As the data contains outliers and the variance differs significantly between years use was made of the non-parametric Wilcoxon test on the median concentrations. This shows that the years are indeed significantly different (<0.05, p-value: 0.012) and that Rn concentrations in 2022 are significantly lower when compared to 2021. 
+
+```{r, echo=F}
+d <- data %>%
+  filter(sampletype == "groundwater",
+         year %in% c(2021, 2022),
+         parameter == "Rn",
+         !samplecode %in% c("SP001B", "GW077_d")) 
+sample_size <- d %>%
+  group_by(parameter, year) %>% 
+  summarise(num = n())
+
+## Student's t-test with mean, so sensitive to outliers and data asymmetry!! But better to detect a significant difference if there is a true difference.
+# is there a significant difference in Rn concentration between the 2 years?
+# H0: the concentrations are the same for the 2 years
+# Assumptions:
+# 1. Independent sample groups
+# 2. Normal distribution (at least for groups <30 samples)
+# 3. Equality of variance between groups
+# 4. There should be no significant outliers in the two groups
+# two-sided
+t.test(value ~ year, data = d)
+# one-sided, i.e. 2021 is larger than 2021.
+t.test(value ~ year, data = d,
+       alternative = "greater")
+# p-value = 0.1251 -->  this is > 0.05 , thus not statistically significant..
+
+# normality test
+shapiro.test(d$value)
+
+# test of variance to test if the variance differs significantly between years. If so, t-test is not allowed.
+var.test(value ~ year, data = d)
+
+## Wilcoxon test with median
+wilcox.test(value ~ year, data = d)
+# p-value = 0.012 --> this is < 0.05, thus statistically significant difference in Rn concentrations between the 2 years! 
+
+p1 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(year, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    #geom_violin(width = 1.4) +
+    #geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    geom_signif(comparisons = list(c("2021\nn=23", "2022\nn=40")), 
+                map_signif_level=TRUE,
+                test = "wilcox.test") +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    #coord_cartesian(ylim = c(0, 10)) +
+    theme_bw()
+
+p2 <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = paste0(year, "\n", "n=", num)) %>%
+  ggplot(aes(x = myaxis, y = value)) +
+    stat_boxplot(geom = "errorbar", width = 0.4) +
+    #geom_violin(width = 1.4) +
+    #geom_boxplot(width = 0.1, color = "grey", alpha = 0.2) +
+    scale_fill_viridis(discrete = TRUE) +
+    geom_boxplot(width = 0.6, fill = "grey") +
+    geom_signif(comparisons = list(c("2021\nn=23", "2022\nn=40")), 
+              map_signif_level=TRUE,
+              test = "wilcox.test",
+              y_position = 7400,
+              tip_length = 0.005) +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(name = paste0(d$parameter[1], " [", d$units[1], "]")) +
+    coord_cartesian(ylim = c(0, 10000)) +
+    theme_bw()
+
+title <- ggplot() +
+  labs(title = "Groundwater radon concentrations difference 2021-2022")
+
+plot_grid(title, plot_grid(p1, p2, labels = "AUTO"), ncol = 1, rel_heights = c(0.1, 1))
+
+```
+
+## Same well in 2021 - 2022
+
+Difference in Rn activity on the same location measured in 2021 and 2022.
+
+```{r, echo=F}
+data %>%
+  filter(parameter == "Rn",
+         putcode != "") %>%
+  group_by(putcode) %>%
+  mutate(same = length(value)) %>%
+  ungroup() %>%
+  filter(same > 1) %>%
+  ggplot(., aes(x = as.factor(year), y = value)) +
+  geom_col() +
+  scale_y_continuous("Rn [Bq/m3]") +
+  scale_x_discrete("") +
+  theme_bw() +
+  facet_wrap(facets = "putcode", scales = "free") +
+  labs(title = "Rn measurements in same wells")
+  
+
+```
+
+## Spatial Rn pattern
+
+Spatial pattern in groundwater radon concentration, combined for 2021-2022. Higher concentrations are found towards the edges of the island. This might be related to longer travel times of the groundwater and thus more mineral radon production. 
+
+Factors that contribute to observed radon concentrations:
+- radon production (can very spatially)
+- uranium, or daughter material, content in different lithologies. The direct source is radium (226Ra), a radioactive metal with a half-life of 1600 years.
+- radon decay (constant = 3.64 d-1)
+
+```{r RnSpatial, echo=F}
+d <- data %>%
+  filter(sampletype == "groundwater",
+         !is.na(value),
+         parameter == "Rn",
+         !samplecode %in% c("SP001B", "GW077_d")) 
+
+# spatial pattern
+# Radon map
+
+ggplot() +
+  geom_sf(data = cur_geology, aes(fill = Field), alpha = 0.5) +
+  scale_fill_manual(name = "Geology", 
+                    values = c("yellowgreen", "purple4", "khaki2", "orange", "lightskyblue1")) +
+  new_scale_fill() +
+  geom_sf(data = pts %>% filter(parameter == "Rn",
+                             sampletype == "groundwater") %>%
+            mutate(value = value / 1000),
+       aes(fill = cut(value, breaks = c(0, 1, 2, 5, 10, 50))),
+       colour = "black",
+       pch = 21,
+       size = 2) +
+  scale_fill_brewer(type = "qual",
+                    palette = "RdGy",
+                    name = "Rn [Bq/l]",
+                    direction = -1,
+                    na.value = "black",
+                    labels = c("0 - 1",
+                               "1 - 2",
+                               "2 - 5",
+                               "5 - 10",
+                               ">10")) +
+  coord_sf(xlim = c(-69.15, -68.75),
+           ylim = c(12.0, 12.4)) +
+  #theme(legend.position = c(0.75, 0.8)) +
+  ggtitle("Radon concentrations in groundwater on Curacao") + 
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  theme(panel.grid.major = element_line(color = gray(.5), 
+                                        linetype = "dashed", 
+                                        linewidth = 0.5), 
+        panel.background = element_rect(fill = "aliceblue"))
+
+
+```
+
+### Geology
+
+The number of samples per geology are displayed in the table below. 
+
+```{r, echo=F} 
+# per geology
+d <- data %>%
+  filter(sampletype == "groundwater",
+         !is.na(value),
+         parameter == "Rn",
+         !samplecode %in% c("SP001B", "GW077_d")) 
+
+d %>% group_by(geology, year) %>%
+  summarise(n = n()) %>%
+  pivot_wider(names_from = year,
+              values_from = n) %>%
+  mutate(Tot = `2021` + `2022`) %>%
+  kable()
+
+```
+
+Difference per geology
+
+```{r}
+sample_size <- d %>%
+  group_by(geology) %>% 
+  summarise(num = paste0("n=", n_distinct(samplecode)))
+
+ggplot(d %>% left_join(sample_size) %>% 
+         mutate(myaxis = paste0(geology, "\n", num)), 
+       aes(x = value, y = myaxis)) +
+  geom_boxplot() +
+  scale_y_discrete("") +
+  scale_x_continuous("Bq/m3") +
+  theme_bw() +
+  labs(title = "Radon concentrations in groundwater")
+
+sample_size <- d %>%
+  group_by(geology, year) %>% 
+  summarise(num = paste0("n=", n_distinct(samplecode)))
+
+ggplot(d %>% left_join(sample_size) %>% 
+         mutate(myaxis = paste0(geology, "\n", num)), 
+       aes(x = value, y = myaxis, fill = as.factor(year))) +
+  geom_boxplot() +
+  scale_y_discrete("") +
+  scale_x_continuous("Bq/m3") +
+  theme_bw() +
+  theme(legend.title = element_blank()) +
+  labs(title = "Radon concentrations in groundwater")
+
+```
+
+Test for significant differences in radon concentrations between geologies
+
+```{r}
+# to test for multiple differences, use ANOVA: assumes normal distribution and equal variances
+# this only tells if there are significant differences between the groups, but not which ones
+aov(value ~ geology_abr, data = d)
+summary(aov(value ~ geology_abr, data = d))
+# test for equal variance
+leveneTest(value ~ geology_abr, data = d)
+# the hypothesis of equal variances is rejected --> use Welch ANOVA (normal distributions and non equal variances) or Kruskal-Wallis (non-normal distributions and non equal variances)
+# Welch ANOVA
+oneway.test(value ~ geology_abr, var.equal = F, data = d)
+# Kruskal-Wallis
+# to test for multiple differences, use Kruskal-Wallis 
+kruskal.test(value ~ geology_abr, data = d)
+
+
+## to check which groups are different, multiple comparisons are needed with a correction for false-positives
+## If variances are not equal, use Games-Howell test, among others
+# Tukey HSD, 
+res_aov <- aov(value ~ geology_abr, data = d)
+res_aov <- kruskal.test(value ~ geology_abr, data = d)
+
+TukeyHSD(res_aov)
+plot(TukeyHSD(res_aov))
+
+# Edit from here
+dat <- d %>%
+  mutate(geology_abr = ifelse(geology_abr %in% c("DO", "DW"), "D", geology_abr))
+
+x <- which(names(dat) == "geology_abr") # name of grouping variable
+y <- which(
+  names(dat) == "value" # names of variables to test
+)
+method1 <- "kruskal.test" # one of "anova" or "kruskal.test"
+method2 <- "wilcox.test" # one of "wilcox.test" or "t.test"
+my_comparisons <- list(c("D", "K"), c("D", "M"), c("D", "L"), c("K", "M"), c("K", "L"), c("M", "L")) # comparisons for post-hoc tests
+# Edit until here
+
+
+# Edit at your own risk
+library(ggpubr)
+for (i in y) {
+  for (j in x) {
+    p <- ggboxplot(dat,
+      x = colnames(dat[j]), y = colnames(dat[i]),
+      color = colnames(dat[j]),
+      legend = "none",
+      palette = "npg",
+      add = "jitter"
+    )
+    print(
+      p + stat_compare_means(aes(label = paste0(after_stat(method), ", p-value = ", after_stat(p.format))),
+        method = method1, label.y = max(dat[, i], na.rm = TRUE)
+      )
+      + stat_compare_means(comparisons = my_comparisons, method = method2, label = "p.format") # remove if p-value of ANOVA or Kruskal-Wallis test >= alpha
+    )
+  }
+}
+
+
+
+```
+
+### Distance from coast vs Rn
+
+Distance from the coast might not be a perfect measure for the travel time due to the asymmetry and (ground)water divide of the island, but it could serve as an initial approximation.  
+
+```{r, echo=F} 
+
+# plot distance from coast vs Rn
+
+
+
+```
+
+### Rn vs EC
+
+Relationship for EC against Rn for groundwater samples for 2021 and 2022 combined:
+
+```{r, echo=F}
+d <- data %>%
+  filter(sampletype == "groundwater",
+         year %in% c(2021, 2022),
+         parameter %in% c("EC", "Rn"),
+         !samplecode %in% c("SP001B", "GW077_d")) 
+
+sample_size <- d %>%
+  group_by(parameter, year) %>% 
+  summarise(num = n())
+
+dat <- d %>%
+  select(putcode, samplecode, year, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+p1 <- ggplot(dat, aes(x = EC, y = Rn)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm") +
+  scale_x_continuous("EC [uS/cm]", limits = c(0, 36000)) +
+  scale_y_continuous("Rn [Bq/m3]") +
+  theme_bw() +
+  theme(legend.title = element_blank(),
+        legend.position = c(0.85, 0.85)) 
+
+p2 <- ggplot(dat, aes(x = EC, y = Rn)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm") +
+  scale_x_continuous("EC [uS/cm]", limits = c(0, 11000)) +
+  scale_y_continuous("Rn [Bq/m3]", limits = c(0, 11000)) +
+  theme_bw() +
+  theme(legend.title = element_blank(),
+        legend.position = c(0.85, 0.85))
+
+title <- ggplot() +
+  labs(title = "Relation EC vs Rn",
+       subtitle = "Groundwater on Curacao combined 2021-2022. Right figure excludes outliers.")
+
+#plot_grid(p1, p2, labels = "AUTO")
+plot_grid(title, plot_grid(p1, p2, labels = "AUTO"), ncol = 1, rel_heights = c(0.15, 1))
+```
+
+
+Relationship for EC and radon when distinguishing between 2021 and the wetter year 2022. 
+
+```{r, echo=F}
+p1 <- ggplot(dat, aes(x = EC, y = Rn, colour = as.factor(year))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm") +
+  scale_x_continuous("EC [uS/cm]", limits = c(0, 36000)) +
+  scale_y_continuous("Rn [Bq/m3]") +
+  theme_bw() +
+  theme(legend.title = element_blank(),
+        legend.position = c(0.85, 0.85)) 
+  # labs(title = "Relation EC vs Rn",
+  #      subtitle = "Groundwater on Curacao for 2021 and 2022")
+
+p2 <- ggplot(dat, aes(x = EC, y = Rn, colour = as.factor(year))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm") +
+  scale_x_continuous("EC [uS/cm]", limits = c(0, 11000)) +
+  scale_y_continuous("Rn [Bq/m3]", limits = c(0, 11000)) +
+  theme_bw() +
+  theme(legend.title = element_blank(),
+        legend.position = c(0.85, 0.85))
+  # labs(title = "Relation EC vs Rn",
+  #      subtitle = "Groundwater on Curacao for 2021 and 2022")
+
+title <- ggplot() +
+  labs(title = "Relation EC vs Rn",
+       subtitle = "Groundwater on Curacao comparison between 2021 and 2022. Right figure excludes outliers.")
+
+#plot_grid(p1, p2, labels = "AUTO")
+plot_grid(title, plot_grid(p1, p2, labels = "AUTO"), ncol = 1, rel_heights = c(0.15, 1))
+
+```
+
+
+

@@ -20,8 +20,7 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, openxlsx, ggmap, skimr,
-               sf, leaflet, data.table, cowplot, data.table)
+pacman::p_load(tidyverse, openxlsx, skimr,data.table, cowplot, data.table)
 
 ###############################################################################
 # load data
@@ -63,12 +62,6 @@ DA_alk <- openxlsx::read.xlsx(paste0(input, "Lab/DA/Alkalinity Iris.xlsx"),
                     sheet = "Summary")
 DA_alk_dil <- openxlsx::read.xlsx(paste0(input, "Lab/DA/Data alkalinity check DA.xlsx"),
                         sheet = "Samples in DA")
-
-# Isotope data file
-
-
-# DOC data file
-
 
 # Table to link labcodes of different analysis to samplecodes
 lab_table <- openxlsx::read.xlsx("C:/Users/mikewit/Documents/SEALINK/Documents/Lab/vertaaltabel_labmonsters.xlsx",
@@ -732,8 +725,10 @@ d_ICP <- dat %>%
 d_ICP_wide <- d %>%
   # adjust digits of values
   mutate(value = round(value, digits = 3)) %>%
-  # select main cation
-  filter(parameter %in% c("Na", "Ca", "Mg", "B", "K", "Fe", "Si")) %>%
+  # select main cations
+  filter(parameter %in% c("Na", "Ca", "Mg", "B", "K", "Fe", "Si"), 
+         # for Fe only select undiluted analysis
+         xor(parameter == "Fe", analysis == "diluted")) %>%
   # adjust values < and > dl
   mutate(parameter = paste(parameter, units),
          value = paste(limit_symbol, value)) %>%
@@ -741,7 +736,6 @@ d_ICP_wide <- d %>%
   pivot_wider(names_from = parameter,
               values_from = value) 
     
-
 # d <- d %>%
 #   filter(parameter %in% c("Na", "Ca", "Mg", "B", "K", "Fe", "Si")) %>%
 #   select(samplecode, parameter, limit_symbol, value, units, method) %>%
@@ -750,10 +744,13 @@ d_ICP_wide <- d %>%
 
 #### Combine all labresults ####
 d <- rbind(d_IC, d_DA, d_ALK, d_ICP) %>%
-  arrange(samplecode, parameter) 
+  arrange(samplecode, parameter) %>%
+  mutate(sd = NA) %>%
+  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) 
 
 # create wide format
 d_wide <- d %>%
+  select(-sd) %>%
   mutate(parameter = paste0(parameter, " [", units, "]"),
          value = paste(limit_symbol, value)) %>%
   select(samplecode, parameter, value) %>%

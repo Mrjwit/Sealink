@@ -33,11 +33,11 @@ pacman::p_load(tidyverse, openxlsx, ggmap, devtools,
 ###############################################################################
 
 # set data file location
-input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/final_merged/" 
 
 # load cleaned data
 data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
-metadata <- openxlsx::read.xlsx(paste0(input, "metadata_2021.xlsx"))
+metadata <- openxlsx::read.xlsx(paste0(input, "metadata_2021_2022.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -64,11 +64,14 @@ d <- data %>%
 setdiff(data %>% filter(year == 1992) %>% select(putcode) %>% distinct(),
         data %>% filter(year == 1977) %>% select(putcode) %>% distinct())
 
-data %>% filter(year %in% c(1992, 2021),
+data %>% filter(year %in% c(1992, 2021, 2022),
                 sampletype == "groundwater",
                 parameter %in% c("Na", "Cl")) %>%
   ggplot(., aes(x = as.character(year), y = value)) +
   geom_boxplot() +
+  scale_x_discrete("") +
+  scale_y_continuous("concentration [mg/L]") +
+  theme_bw() +
   facet_wrap(facets = "parameter")
 
 # add geology and land use
@@ -85,12 +88,13 @@ data <- data %>%
 #   dplyr::summarise(n()) 
 
 data %>%
-  filter(year == 2021, 
+  filter(year %in% c(2021, 2022), 
          sampletype == "groundwater",
          samplecode != "SP001B") %>%
-  select(samplecode, geology) %>%
+  select(samplecode, year, geology) %>%
   group_by(geology) %>%
-  summarise(n_distinct(samplecode))
+  summarise(n_2021 = n_distinct(samplecode[year == 2021]),
+            n_2022 = n_distinct(samplecode[year == 2022]))
   
   summarise(n = n_distinct(samplecode),
             `%` = round(n / 79 * 100, digits = 0)) %>%
@@ -102,15 +106,40 @@ d <- data %>%
          !samplecode %in% c("AIR001", "SP001B")) %>%
   select(samplecode, parameter, value, sampletype, subtype) %>%
   # change NA to zero
-  mutate_if(is.numeric, funs(ifelse(is.na(.), 0, .))) %>%
+  mutate_if(is.numeric, funs(ifelse(is.na(.), -99, .))) %>%
+  # add xy data from metadata
+  left_join(., metadata %>% select(samplecode, xcoord, ycoord)) %>%
+   ##mutate(value = replace_na(value, -99)) %>%
+  # wide format for parameters
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  # change NA values to -99 so that columns stay numeric in QGIS (cant deal with NA)
+  replace(is.na(.), -99)
+  
+# save watertypes for GIS viewing
+write.csv(d, paste0("C:/Users/mikewit/Documents/SEALINK/", "GIS/SEALINK/Data/Wells/hydrochemistry_2021.csv"))
+
+d <- data %>%
+  filter(year == 2022) %>%
+  select(samplecode, parameter, value, sampletype, subtype) %>%
+  # change NA to zero
+  mutate_if(is.numeric, funs(ifelse(is.na(.), -99, .))) %>%
   # add xy data from metadata
   left_join(., metadata %>% select(samplecode, xcoord, ycoord)) %>%
   # wide format for parameters
   pivot_wider(names_from = parameter,
-              values_from = value)
+              values_from = value) %>%
+  # change NA values to -99 so that columns stay numeric in QGIS (cant deal with NA)
+  replace(is.na(.), -99)
+
+# d %>%
+#   dplyr::group_by(samplecode, sampletype, subtype, xcoord, ycoord, parameter) %>%
+#   dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+#   dplyr::filter(n > 1L) 
 
 # save watertypes for GIS viewing
-write.csv(d, paste0("C:/Users/mikewit/Documents/SEALINK/", "GIS/SEALINK/Data/Wells/hydrochemistry_2021.csv"))
+write.csv(d, paste0("C:/Users/mikewit/Documents/SEALINK/", "GIS/SEALINK/Data/Wells/hydrochemistry_2022.csv"))
+
 
 ###############################################################################
 # Data overview

@@ -13,15 +13,16 @@ if (!require("pacman")) install.packages("pacman")
 #                ggbiplot, ggcorrplot, psych, FactoMineR)
 pacman::p_load(tidyverse, openxlsx, FactoMineR,
                vegan, ggcorrplot, corrplot, factoextra,
-               PerformanceAnalytics)
+               PerformanceAnalytics, amap)
 ```
 
 ```{r, include=FALSE}
 # set data file location
-input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/final_merged/" 
 
 # load cleaned data
 data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
+meta <- openxlsx::read.xlsx(paste0(input, "metadata_2021_2022.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -48,6 +49,9 @@ d <- data %>%
 
 # PCA
 res.pca <- PCA(d, graph = T)
+
+# robust PCA, better application with outliers
+res.pca <- acprob(d)
 ```
 
 
@@ -109,4 +113,29 @@ fviz_contrib(res.pca, choice = "var", axes = 5, top = 10)
 
 
 
+# PCA 2022
+```{r}
+# only select parameters Iris used for groundwater samples
+d <- data %>%
+  filter(year == 2022) %>%
+  filter(sampletype == "groundwater") %>%
+  filter(parameter %in% c("pH", "NO3", "PO4", "HCO3", "E.coli", "F", "Cl", 
+                          "SO4", "NH4", "Temp", "EC_uS", "Eh", "Br", "B",
+                          "Ca", "Fe", "K", "Mg", "Na", "Si")) %>%
+  # select only samplecode and concentrations and convert to wide format
+  select(samplecode, parameter, value) %>%
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  select(-samplecode)
 
+# scale if necessary. Is done within PCA function
+#d <- scale(d[,-1])
+
+# PCA
+res.pca <- PCA(d, graph = T)
+```
+
+```{r}
+# print summary of PCA results
+summary(res.pca)
+```

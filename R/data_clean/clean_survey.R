@@ -30,9 +30,12 @@ pacman::p_load(tidyverse, openxlsx, ggmap,
 # set data file location
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
 
-# survey data file
-survey <- read.xlsx(paste0(input, "Hydrochemie/S123_f68192a63d674512a1a7375348b20905_EXCEL.xlsx"))
+# survey data file first fieldwork 2021-2022
+survey <- read.xlsx(paste0(input, "Hydrochemie/Survey_data_Oct21_Jan22.xlsx"))
 survey_old <- read.xlsx(paste0(input, "Hydrochemie/Survey_data.xlsx"))
+
+# second fieldwork 2022-2023
+survey2 <- read.xlsx(paste0(input, "Hydrochemie/Survey_data_second_fieldwork.xlsx"))[106:231,]
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -40,6 +43,15 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 ###############################################################################
 # edit data
 ###############################################################################
+
+# merge survey data fieldwork 1 (2021-2022) and 2 (2022-2023)
+survey <- rbind(survey %>% 
+                  select(-c(91, 96, 97, 110, 134, 139)) %>%
+                  mutate("Well.code.(Titus)" = "",
+                         "EC.profile" = "",
+                         "Note.on.dipper.measurements" = ""), 
+                survey2 %>%
+                  select(-c(91, 96, 97, 110, 134, 139)))
 
 # clean up the survey data
 d1 <- survey %>%

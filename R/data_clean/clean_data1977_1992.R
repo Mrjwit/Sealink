@@ -116,7 +116,7 @@ d$lat <- well_loc[match(d$putcode, well_loc$Wellno2), 16]
 d$lon <- well_loc[match(d$putcode, well_loc$Wellno2), 15]
 d$missingcoord <- ifelse(is.na(d$lat), T, F)
 
-write.xlsx(d, paste0(output, "Clean_data/hydrochemistry1977-19922.xlsx"))
+#write.xlsx(d, paste0(output, "Clean_data/hydrochemistry1977-19922.xlsx"))
 
 
 ## Check hydrochemical statistics

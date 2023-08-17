@@ -486,7 +486,7 @@ d <- ICP_total %>%
   filter(!str_detect(labcode, remove.list)) %>%
   # convert all elements to characters so they can be placed in one column
   mutate_at(c(3:49), as.character) %>%
-  #place paramters in long format
+  #place parameters in long format
   pivot_longer(., cols = c(Li:Pb_undil),
                values_to = "value",
                names_to = "parameter") %>%

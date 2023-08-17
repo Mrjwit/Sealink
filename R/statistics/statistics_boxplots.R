@@ -19,15 +19,15 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, openxlsx, ggmap, xlsx, scales,
-               sf, leaflet, data.table, cowplot, data.table)
+pacman::p_load(tidyverse, openxlsx, xlsx, scales,
+               cowplot, data.table)
 
 ###############################################################################
 # load data
 ###############################################################################
 
 # set data file location
-input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
+input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/final_merged/" 
 
 # load cleaned data
 data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
@@ -57,7 +57,7 @@ d1 <- data %>%
             dl = paste(unique(detection_limit), collapse = ", "),
             method = paste(unique(method), collapse = ", ")) 
 
-#xlsx::write.xlsx(d1, file = paste0(output, "statistics_all_parameters.xlsx"), sheetName = "TOTAL")
+xlsx::write.xlsx(d1, file = paste0(output, "statistics_all_parameters.xlsx"), sheetName = "2021 TOTAL")
 
 d2 <- data %>%
   filter(year == 2021,
@@ -76,7 +76,26 @@ d2 <- data %>%
             dl = paste(unique(detection_limit), collapse = ", "),
             method = paste(unique(method), collapse = ", ")) 
 
-#xlsx::write.xlsx(d2, file = paste0(output, "statistics_all_parameters.xlsx"), sheetName = "> dl", append = T)
+xlsx::write.xlsx(d2, file = paste0(output, "statistics_all_parameters.xlsx"), sheetName = "2021 > dl", append = T)
+
+# only groundwater
+d3 <- data %>%
+  filter(year == 2021,
+         sampletype == "groundwater",
+         !is.na(value)) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  group_by(parameter) %>%
+  summarise(n=n(),
+            '% <dl' = round(length(value[limit_symbol == "<"]) / length(value) * 100, digits = 1), 
+            min = min(value, na.rm = T),
+            p10 = quantile(value, 0.1, na.rm = T),
+            p50 = quantile(value, 0.5, na.rm = T),
+            avg = mean(value, na.rm = T),
+            p90 = quantile(value, 0.9, na.rm = T),
+            max = max(value, na.rm = T),
+            dl = paste(unique(detection_limit), collapse = ", "),
+            method = paste(unique(method), collapse = ", ")) 
+xlsx::write.xlsx(d3, file = paste0(output, "statistics_all_parameters.xlsx"), sheetName = "2021 gw", append = T)
 
 #### Boxplots ####
 
@@ -146,6 +165,7 @@ ggplot(d %>% filter(units == "mg/l",
 # parameters in ug/l
 d <- data %>%
   filter(year == 2021, !is.na(value),
+         !parameter %in% c("Ag", "Cd"),
          sampletype == "groundwater")
 sample_size <- d %>%
   filter(units == "ug/l") %>%
@@ -202,7 +222,7 @@ ggplot(d %>% mutate(myaxis = paste0(parameter, "\n", num)),
   annotation_logticks(sides = "lr")
 #ggsave(paste0(output, "figures/groundwater_boxplot_metals_ugl.png"))
 
-# ordered boxplots
+## ordered boxplots
 d_ordered <- d %>% 
   group_by(parameter) %>%
   mutate(p50 = median(value, na.rm = T)) %>%
@@ -221,6 +241,41 @@ ggplot(d_ordered %>% mutate(myaxis = paste0(as.character(parameter), "\n", num))
   theme_bw() + 
   annotation_logticks(sides = "lr")
 ggsave(paste0(output, "figures/cations_boxplot_ugl_ordered.png"))
+
+## ordered boxplot groundwater
+d <- data %>%
+  filter(year == 2021, !is.na(value),
+         sampletype == "groundwater",
+         # select only metals
+         parameter %in% metals) %>%
+  mutate(value = ifelse(units == "mg/l", value * 1000, value))
+
+sample_size <- d %>%
+  filter(parameter %in% metals) %>%
+  group_by(parameter) %>% 
+  dplyr::summarise(num = n())
+d <- d %>%
+  left_join(sample_size) %>%
+  mutate(myaxis = factor(paste0("n=", num)))
+
+d_ordered <- d %>% 
+  group_by(parameter) %>%
+  mutate(p50 = median(value, na.rm = T)) %>%
+  ungroup()
+
+ggplot(d_ordered %>% mutate(myaxis = paste0(as.character(parameter), "\n", num)),
+       aes(x = reorder(myaxis, -p50), y = value)) +
+  stat_boxplot(geom = "errorbar", width = 0.4) +
+  geom_boxplot(fill = "lightgrey", width = 0.6) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous(name = "[ug/L]", trans = 'log10',
+                     breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)),
+                     sec.axis = sec_axis(~.,
+                                         labels = trans_format("log10", math_format(10^.x)))) +
+  theme_bw() + 
+  annotation_logticks(sides = "lr")
+ggsave(paste0(output, "figures/groundwater_cations_boxplot_ugl_ordered.png"))
 
 d <- data %>%
   filter(year == 2021, !is.na(value),

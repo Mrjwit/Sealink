@@ -140,6 +140,114 @@ d <- data %>%
 # save watertypes for GIS viewing
 write.csv(d, paste0("C:/Users/mikewit/Documents/SEALINK/", "GIS/SEALINK/Data/Wells/hydrochemistry_2022.csv"))
 
+# wide format with ratios
+SO4sea <- data %>% filter(sampletype == "seawater", parameter == "SO4") %>% pull(value) %>% mean()
+Clsea <- data %>% filter(sampletype == "seawater", parameter == "Cl") %>% pull(value) %>% mean()
+
+d_wide <- data %>%
+  #filter(year > 2020) %>%
+  # remove isotopes until accurate measurements are included
+  filter(method != "IA") %>%
+  mutate(parameter = paste(parameter, units)) %>%
+  select(putcode, samplecode, parameter, value, watercode, sampletype, subtype, geology) %>%
+  distinct() %>%
+  # put in wide format
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  # calculate ratios
+  mutate(`B/Cl` = (`B ug/l`/1000) / `Cl mg/l`,
+         `Ca/Cl` = `Ca mg/l` / `Cl mg/l`,
+         `SO4/Cl` = `SO4 mg/l` / `Cl mg/l`,
+         `SO4 cons/prod` = `SO4 mg/l` - (`Cl mg/l` * SO4sea/Clsea))
+
+# data %>%
+#   dplyr::group_by(putcode, samplecode, watercode, sampletype, subtype, parameter) %>%
+#   dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+#   dplyr::filter(n > 1L)
+
+data %>%
+  filter(year == 2022) %>%
+  select(samplecode, sampletype, parameter, value) %>%
+  filter(parameter %in% c("B", "Cl", "EC")) %>%
+  #filter(sampletype != "groundwater") %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+d %>%
+  select(samplecode, sampletype, subtype, `EC uS/cm`, `B ug/l`, `Cl mg/l`, `B/Cl`) %>%
+  #filter(sampletype != "groundwater") %>%
+  view()
+
+summ <- d %>% 
+  group_by(sampletype) %>%
+  summarise(n = n(),
+            `avg_B/Cl` = mean(`B/Cl`, na.rm = T),
+            `med_B/Cl` = median(`B/Cl`, na.rm = T),
+            avg_Cl = mean(`Cl mg/l`, na.rm = T),
+            med_Cl = median(`Cl mg/l`, na.rm = T))
+
+p1 <- ggplot(data = d, aes(x = `B/Cl`, y = fct_rev(sampletype))) +
+  geom_boxplot(fill = "lightgrey") +
+  labs(y = "") +
+  theme_bw() 
+
+p2 <- ggplot(data = d, aes(x = `B/Cl`, y = subtype)) +
+  geom_boxplot() +
+  theme_bw() 
+
+sl <- ((summ[6,4]-summ[1,4])/(summ[6,6]-summ[1,6]))
+intc <- summ[6,4] - summ[6,6] * sl
+
+p3 <- ggplot(data = d %>% filter(!sampletype %in% c("rainwater", "seawater")), 
+             aes(x = `Cl mg/l`, y = `B/Cl`)) +
+  geom_point(aes(color = sampletype)) +
+  geom_smooth(formula = y ~ x) +
+  geom_abline(intercept = intc$`med_B/Cl`, slope = sl$`med_B/Cl`, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 1000)) +
+  theme_bw() +
+  theme(legend.position = c(0.9, 0.65))
+
+# Ca/Cl 
+p1 <- ggplot(data = d, aes(x = `Ca/Cl`, y = fct_rev(sampletype))) +
+  geom_boxplot(fill = "lightgrey") +
+  labs(y = "") +
+  theme_bw() 
+
+p3 <- ggplot(data = d, 
+             aes(x = `Cl mg/l`, y = `Ca/Cl`)) +
+  geom_point(aes(color = sampletype)) +
+  geom_smooth(formula = y ~ x) +
+  #geom_abline(intercept = intc$`med_B/Cl`, slope = sl$`med_B/Cl`, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 1000)) +
+  theme_bw() 
+#theme(legend.position = c(0.9, 0.65))
+
+cowplot::plot_grid(p1, p3, ncol = 1, labels = "AUTO")
+
+# SO4/Cl 
+p1 <- ggplot(data = d, aes(x = `SO4/Cl`, y = fct_rev(sampletype))) +
+  geom_boxplot(fill = "lightgrey") +
+  labs(y = "") +
+  theme_bw() 
+
+p3 <- ggplot(data = d, 
+             aes(x = `Cl mg/l`, y = `SO4/Cl`)) +
+  geom_point(aes(color = sampletype)) +
+  geom_smooth(formula = y ~ x) +
+  #geom_abline(intercept = intc$`med_B/Cl`, slope = sl$`med_B/Cl`, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 1000)) +
+  theme_bw() 
+#theme(legend.position = c(0.9, 0.65))
+
+cowplot::plot_grid(p1, p3, ncol = 1, labels = "AUTO")
+
+ggplot(data = d_wide %>% filter(sampletype == "groundwater"), 
+       aes(x = `Cl mg/l`, y = `SO4 cons/prod`)) +
+  geom_point(aes(color = geology), alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(y = "SO4 consumed(-)/produced(+) mg/L",
+       title = "Groundwater sulphate consumption/production") +
+  theme_bw() 
 
 ###############################################################################
 # Data overview

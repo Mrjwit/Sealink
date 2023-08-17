@@ -40,15 +40,14 @@ metadata <- openxlsx::read.xlsx(paste0(input, "survey_clean.xlsx")) # includes f
 DOC <- openxlsx::read.xlsx(paste0(input, "DOC_clean.xlsx")) # only fw1, yet
 
 # load dataset of Jessie (2020-2021)
-#
-#
+d_2020 <- openxlsx::read.xlsx(paste0(input, "2020/hydrochemistry2020.xlsx"))
 
 # load cleaned labdata of 2022-2023 fieldwork
 IC2 <- openxlsx::read.xlsx(paste0(input, "Second_fieldwork/IC_Oct-Jan_2023.xlsx")) %>%
   # remove NH4 and PO4 from IC to replace with DA
   filter(!parameter %in% c("NH4", "PO4"))
 DA2 <- openxlsx::read.xlsx(paste0(input, "Second_fieldwork/DA_Oct-Jan_2023.xlsx"))
-
+ICP2 <- openxlsx::read.xlsx(paste0(input, "Second_fieldwork/ICP_Oct-Jan_2023.xlsx"))
 
 # load historic hydrochemical dataset of 1977 and 1992
 data1977_1992 <- openxlsx::read.xlsx(paste0(input, "hydrochemistry1977-1992.xlsx"))
@@ -63,7 +62,7 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/final_merged/"
 ## Editing data
 # put field measurements from metadata in long format so that in can be merged
 d <- metadata %>%
-  select(samplecode, EC_uS, pH, Temp, DO, DO_sat, redox, NO3, NO2) %>%
+  dplyr::select(samplecode, EC_uS, pH, Temp, DO, DO_sat, redox, NO3, NO2) %>%
   dplyr::rename(NO3_field = NO3,
          NO2_field = NO2,
          Eh = redox) %>%
@@ -91,111 +90,266 @@ d <- metadata %>%
 data <- rbind(labdata, 
               alk %>% filter(units == "mg/l"), 
               ecoli, radon, d, isotopes, DOC,
-              IC2, DA2) %>%
+              IC2 %>% filter(!parameter %in% c("Na", "Ca", "Mg", "K")), 
+              DA2, ICP2) %>%
   arrange(samplecode, parameter) %>%
   mutate(watercode = substr(samplecode, start = 1, stop = 2)) %>%
   # Remove units mg N/L and mg P/L, for PO4 only select DA analysis
   mutate(flag = ifelse(parameter == "PO4" & method == "IC", 1, 0)) %>%
   filter(!units %in% c("mg N/L", "mg P/L"),
          flag == 0) %>%
-  select(-flag)
+  dplyr::select(-flag)
 
-# Add other relevant metadata
-d_meta <- metadata %>%
-  select(samplecode, Well.ID, xcoord, ycoord, date, time, Well.type, `Inner.well.diameter.(m)`, `Well.depth.below.surface.(m)`, 
-         `Depth.of.well.owner.(m)`, Note.on.well.identification, 
-         `Groundwater.level.below.surface.(m)`, sample_depth, sample_method, sample_notes, 
-         `Geology.according.to.geological.map.(Beets)`, `Other.-.Geology.according.to.geological.map.(Beets)`, 
-         Land.use.based.on.own.observations, `Other.-.Land.use.based.on.own.observations`,
-         `House./.location.waste.water.collection`, `Well.distance.from.house.(m)`, `Note.on.sewage.(in.the.area)`, 
-         Name.owner, Address, `Contact.mail/phone.number:`)
-
-# add 1 geology column and make distinction between east and west CLF
-d_meta <- d_meta %>%
-  mutate(geology = case_when(
-    `Geology.according.to.geological.map.(Beets)` == "Limestones" ~ "Limestones",
-    `Geology.according.to.geological.map.(Beets)` == "Limestones_and_Marls" ~ "Limestones",
-    `Geology.according.to.geological.map.(Beets)` == "Knip_group" ~ "Knip Group",
-    `Geology.according.to.geological.map.(Beets)` == "Midden_Curacao_formation" ~ "Curacao Midden Formation",
-    `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord >= -69.009065 ~ "Curacao Lava Formation East",
-    `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord < -69.009065 ~ "Curacao Lava Formation West",
-    `Other.-.Geology.according.to.geological.map.(Beets)` == "knip group, intrusives " ~ "Knip Group - intrusive",
-    TRUE ~ "Other" )) %>%
-  mutate(geology_abr = case_when(
-    `Geology.according.to.geological.map.(Beets)` == "Limestones" ~ "L",
-    `Geology.according.to.geological.map.(Beets)` == "Limestones_and_Marls" ~ "L",
-    `Geology.according.to.geological.map.(Beets)` == "Knip_group" ~ "K",
-    `Geology.according.to.geological.map.(Beets)` == "Midden_Curacao_formation" ~ "M",
-    `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord >= -69.009065 ~ "DO",
-    `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord < -69.009065 ~ "DW",
-    `Other.-.Geology.according.to.geological.map.(Beets)` == "knip group, intrusives " ~ "K - intrusive",
-    TRUE ~ "Other" ))
-
-# change classes of land use...
-# importing GIS layers
-input_GIS <- "C:/Users/mikewit/Documents/SEALINK/GIS/SEALINK/"
-cur_zonalmap <- st_read(paste0(input_GIS,
-                               "Layers/Landuse/Curacao_EOP.shp")) %>%
-  st_transform(crs = 4326) %>%
-  mutate(landuse_zonal_map = case_when(
-    EOP == 1 ~ "Unknown, Klein Curacao",
-    EOP == 3 ~ "Urban areas",
-    EOP == 4 ~ "Old city", 
-    EOP == 5 ~ "Industry",
-    EOP == 6 ~ "Airport",
-    EOP == 7 ~ "Touristic areas",
-    EOP == 8 ~ "Agriculture",
-    EOP == 9 ~ "Conservation areas",
-    EOP == 10 ~ "Park areas",
-    EOP == 11 ~ "Rural areas", 
-    EOP == 12 ~ "Open land",
-    EOP == 13 ~ "Inland water", 
-    EOP == 14 ~ "Conservation water", 
-    EOP == 15 ~ "Inland island",
-    EOP == 309 ~ "Undefined land use 1",
-    EOP == 3012 ~ "Undefined land use 2",
-    TRUE ~ "other" ))
-d_zonalmap <- st_drop_geometry(cur_zonalmap)
-
-d_zonalmap %>%
-  mutate(area_km = area / 1000000) %>%
-  group_by(landuse_zonal_map) %>%
-  summarise(tot_area_km2 = round(sum(area_km), digits = 2)) %>%
-  rbind(., c("Total", colSums(.[,2]))) %>%
-  mutate(`area %` = round(as.numeric(tot_area_km2) / 440.804421*100, digits = 2))
-  
-
-pts <- st_as_sf(d_meta %>% 
-                  filter(!is.na(xcoord)) %>%
-                  select(samplecode, xcoord, ycoord), 
-                coords = c("xcoord", "ycoord"),
-                crs = 4326, agr = "constant") 
-
-# Intersect sample points with zonal map data
-# first check if polygon is valid, should return all true!
-#st_is_valid(cur_zonalmap)
-cur_zonalmap <- st_make_valid(cur_zonalmap)
-
-pts_lu <- st_intersection(pts, cur_zonalmap %>% select(landuse_zonal_map)) %>%
-  st_drop_geometry() 
-
-# add landuse type to metadata file
-d_meta <- d_meta %>%
-  left_join(., pts_lu)
-
-# intersect sample points with catchment maps
-catchments <- st_read(paste0(input_GIS,
-                             "Layers/Catchments/Curacao_SAGA_catchments_Stahler_6.shp")) %>%
-  st_transform(crs = 4326)
-catchments <- st_make_valid(catchments)
-
-pts_catch <- st_intersection(pts, catchments %>% select(Catchment) %>% filter(!is.na(Catchment))) %>%
-  st_drop_geometry()
-
-# add catchment to metadata file
-d_meta <- d_meta %>%
-  left_join(., pts_catch)
-
+# # Add other relevant metadata
+# d_meta <- metadata %>%
+#   dplyr::select(samplecode, Well.ID, xcoord, ycoord, date, time, Well.type, `Inner.well.diameter.(m)`, `Well.depth.below.surface.(m)`, 
+#          `Depth.of.well.owner.(m)`, Note.on.well.identification, 
+#          `Groundwater.level.below.surface.(m)`, sample_depth, sample_method, sample_notes, 
+#          `Geology.according.to.geological.map.(Beets)`, `Other.-.Geology.according.to.geological.map.(Beets)`, 
+#          Land.use.based.on.own.observations, `Other.-.Land.use.based.on.own.observations`,
+#          `House./.location.waste.water.collection`, `Well.distance.from.house.(m)`, `Note.on.sewage.(in.the.area)`, 
+#          Name.owner, Address, `Contact.mail/phone.number:`)
+# 
+# # add 1 geology column and make distinction between east and west CLF
+# d_meta <- d_meta %>%
+#   mutate(geology = case_when(
+#     `Geology.according.to.geological.map.(Beets)` == "Limestones" ~ "Limestones",
+#     `Geology.according.to.geological.map.(Beets)` == "Limestones_and_Marls" ~ "Limestones",
+#     `Geology.according.to.geological.map.(Beets)` == "Knip_group" ~ "Knip Group",
+#     `Geology.according.to.geological.map.(Beets)` == "Midden_Curacao_formation" ~ "Curacao Midden Formation",
+#     `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord >= -69.009065 ~ "Curacao Lava Formation East",
+#     `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord < -69.009065 ~ "Curacao Lava Formation West",
+#     `Other.-.Geology.according.to.geological.map.(Beets)` == "knip group, intrusives " ~ "Knip Group - intrusive",
+#     TRUE ~ "Other" )) %>%
+#   mutate(geology_abr = case_when(
+#     `Geology.according.to.geological.map.(Beets)` == "Limestones" ~ "L",
+#     `Geology.according.to.geological.map.(Beets)` == "Limestones_and_Marls" ~ "L",
+#     `Geology.according.to.geological.map.(Beets)` == "Knip_group" ~ "K",
+#     `Geology.according.to.geological.map.(Beets)` == "Midden_Curacao_formation" ~ "M",
+#     `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord >= -69.009065 ~ "DO",
+#     `Geology.according.to.geological.map.(Beets)` == "Curacao_lava_formation" & xcoord < -69.009065 ~ "DW",
+#     `Other.-.Geology.according.to.geological.map.(Beets)` == "knip group, intrusives " ~ "K - intrusive",
+#     TRUE ~ "Other" ))
+# 
+# # change classes of land use...
+# # importing GIS layers
+# input_GIS <- "C:/Users/mikewit/Documents/SEALINK/GIS/SEALINK/"
+# cur_zonalmap <- st_read(paste0(input_GIS,
+#                                "Layers/Landuse/Curacao_EOP.shp")) %>%
+#   st_transform(crs = 4326) %>%
+#   mutate(landuse_zonal_map = case_when(
+#     EOP == 1 ~ "Unknown, Klein Curacao",
+#     EOP == 3 ~ "Urban areas",
+#     EOP == 4 ~ "Old city", 
+#     EOP == 5 ~ "Industry",
+#     EOP == 6 ~ "Airport",
+#     EOP == 7 ~ "Touristic areas",
+#     EOP == 8 ~ "Agriculture",
+#     EOP == 9 ~ "Conservation areas",
+#     EOP == 10 ~ "Park areas",
+#     EOP == 11 ~ "Rural areas", 
+#     EOP == 12 ~ "Open land",
+#     EOP == 13 ~ "Inland water", 
+#     EOP == 14 ~ "Conservation water", 
+#     EOP == 15 ~ "Inland island",
+#     EOP == 309 ~ "Undefined land use 1",
+#     EOP == 3012 ~ "Undefined land use 2",
+#     TRUE ~ "other" ))
+# d_zonalmap <- st_drop_geometry(cur_zonalmap)
+# 
+# d_zonalmap %>%
+#   mutate(area_km = area / 1000000) %>%
+#   group_by(landuse_zonal_map) %>%
+#   summarise(tot_area_km2 = round(sum(area_km), digits = 2)) %>%
+#   rbind(., c("Total", colSums(.[,2]))) %>%
+#   mutate(`area %` = round(as.numeric(tot_area_km2) / 440.804421*100, digits = 2))
+#   
+# 
+# pts <- st_as_sf(d_meta %>% 
+#                   filter(!is.na(xcoord)) %>%
+#                   dplyr::select(samplecode, xcoord, ycoord), 
+#                 coords = c("xcoord", "ycoord"),
+#                 crs = 4326, agr = "constant") 
+# 
+# # Intersect sample points with zonal map data
+# # first check if polygon is valid, should return all true!
+# #st_is_valid(cur_zonalmap)
+# cur_zonalmap <- st_make_valid(cur_zonalmap)
+# 
+# pts_lu <- st_intersection(pts, cur_zonalmap %>% dplyr::select(landuse_zonal_map)) %>%
+#   st_drop_geometry() 
+# 
+# # add landuse type to metadata file
+# d_meta <- d_meta %>%
+#   left_join(., pts_lu)
+# 
+# ### add landcover  ###
+# e <- as(extent(-69.2, -68.7, 12.0, 12.4), 'SpatialPolygons')
+# crs(e) <- "+proj=longlat +datum=WGS84 +no_defs"
+# 
+# # reclassify landcover types
+# recl <- data.frame(ID = c(10, 20, 30, 40, 50, 60, 80, 90, 95),
+#                    cover = c("Tree cover", "Shrubland", "Grassland", "Cropland", "Built-up", 
+#                              "Bare", "Permanent water bodies", "Herbaceous wetland", "Mangroves"))
+# 
+# cur_landcover <- raster(paste0(input_GIS,
+#                                "Layers/Landcover/Landcover_10m_2020.tif")) %>%
+#   # crop it to only Curacao
+#   crop(., e) 
+# # add levels of cover types
+# levels(cur_landcover) <- recl
+# # check frequency of each landcover tile 
+# # freq(cur_landcover)
+# # plot
+# # plot(cur_landcover, col = c("darkgreen", "orange", "yellow", "pink", "red", 
+# #                             "grey", "blue", "lightblue", "lightgreen"))
+# 
+# pts_lc <- data.frame(pts$samplecode,
+#                      pts$geometry,
+#                      extract(cur_landcover, pts)) %>%
+#   mutate(landcover = case_when(
+#     extract.cur_landcover..pts. == 10 ~ "Tree cover",
+#     extract.cur_landcover..pts. == 20 ~ "Shrubland",
+#     extract.cur_landcover..pts. == 30 ~ "Grassland",
+#     extract.cur_landcover..pts. == 40 ~ "Cropland",
+#     extract.cur_landcover..pts. == 50 ~ "Built-up",
+#     extract.cur_landcover..pts. == 60 ~ "Bare land",
+#     extract.cur_landcover..pts. == 80 ~ "Permanent water bodies",
+#     extract.cur_landcover..pts. == 90 ~ "Herbaceous wetland",
+#     extract.cur_landcover..pts. == 95 ~ "Mangroves",
+#     TRUE ~ "other"))
+# names(pts_lc) <- c("samplecode", "coord", "lc_value", "landcover")
+#   
+# # add landcover type to metadata file
+# d_meta <- d_meta %>%
+#   left_join(., pts_lc %>% dplyr::select(samplecode, landcover))
+# 
+# ### intersect sample points with catchment maps ###
+# catchments <- st_read(paste0(input_GIS,
+#                              "Layers/Catchments/Curacao_SAGA_catchments_Stahler_6.shp")) %>%
+#   st_transform(crs = 4326)
+# catchments <- st_make_valid(catchments)
+# 
+# pts_catch <- st_intersection(pts, catchments %>% 
+#                                dplyr::select(Catchment) %>% 
+#                                filter(!is.na(Catchment))) %>%
+#   st_drop_geometry()
+# 
+# # add catchment to metadata file
+# d_meta <- d_meta %>%
+#   left_join(., pts_catch)
+# 
+# ### add well distance to ocean ###
+# # example: https://gis.stackexchange.com/questions/225102/calculate-distance-between-points-and-nearest-polygon-in-r 
+# # compute shortest distance between ocean (cur_coast) and wells (pts)
+# cur_coastline <- st_read(paste0(input_GIS,
+#                                 "Layers/Topography/CUR_Coastline.shp")) %>%
+#   st_transform(crs = 4326)
+# 
+# # takes long time..! 
+# pts_sp <- sf:::as_Spatial(pts)
+# dist.mat <- geosphere::dist2Line(p = sf:::as_Spatial(pts),  # some reason sf objects dont work, so convert to spatial object
+#                                  line = sf:::as_Spatial(cur_coastline)) # same
+# 
+# # bind results with original points
+# pts.wit.dist <- cbind(pts, dist.mat)
+# pts.wit.dist[1:3,]
+# 
+# # add to metadatafile
+# d_meta <- d_meta %>%
+#   left_join(., pts.wit.dist %>% st_drop_geometry() %>% dplyr::select(samplecode, distance)) %>%
+#   rename(dist.coast = distance)
+# 
+# # # check with plot
+# # pts.sp <- sp::SpatialPoints(coords      = sf:::as_Spatial(pts)[,c("xmin","ymax")], # order matters
+# #                             proj4string = wrld_subset@proj4string)
+# # plot(pts %>% filter(samplecode != "SR013"), col="red")
+# # plot(cur_coastline$geometry, add=TRUE)
+# # # plot arrows to indicate the direction of the great-circle-distance
+# # for (i in 1:nrow(pts.wit.dist)) {
+# #   arrows(x0 = pts.wit.dist[i,1], 
+# #          y0 = pts.wit.dist[i,2], 
+# #          x1 = pts.wit.dist[i,4], 
+# #          y1 = pts.wit.dist[i,5],
+# #          length = 0.1,
+# #          col = "green")
+# # }
+# 
+# ### add population density ###
+# geozone <- st_read(paste0(input_GIS,
+#                            "Layers/Landuse/GeocodeBuurten/GeocodeZone.shp")) %>%
+#   st_transform(crs = 4326)
+# neighborhoods <- st_read(paste0(input_GIS,
+#                                 "Layers/Landuse/GeocodeBuurten/Buurten.shp")) %>%
+#   st_transform(crs = 4326)
+# # quick check
+# # plot(geozone)  
+# # plot(neighborhoods)
+# # 
+# # p1 <- ggplot() +
+# #   geom_sf(data = cur_coastline) +
+# #   geom_sf(data = geozone, aes(fill = Pop_2011)) + 
+# #   scale_fill_continuous(type = "viridis") +
+# #   coord_sf(xlim = c(-69.15, -68.75),
+# #            ylim = c(12.0, 12.4)) +
+# #   ggtitle("Geozones total pop 2011") +
+# #   theme_minimal()
+# # 
+# # p2<- ggplot() +
+# #   geom_sf(data = cur_coastline) +
+# #   geom_sf(data = geozone, aes(fill = Dens_2011)) + 
+# #   scale_fill_continuous(type = "viridis") +
+# #   coord_sf(xlim = c(-69.15, -68.75),
+# #            ylim = c(12.0, 12.4)) +
+# #   ggtitle("Geozones pop dens 2011") +
+# #   theme_minimal()
+# # 
+# # p3 <- ggplot() +
+# #   geom_sf(data = cur_coastline) +
+# #   geom_sf(data = geozone, aes(fill = Households)) + 
+# #   scale_fill_continuous(type = "viridis") +
+# #   coord_sf(xlim = c(-69.15, -68.75),
+# #            ylim = c(12.0, 12.4)) +
+# #   ggtitle("Geozones nr of households 2011") +
+# #   theme_minimal()
+# # 
+# # p4 <- ggplot() +
+# #   geom_sf(data = cur_coastline) +
+# #   geom_sf(data = geozone, aes(fill = avg_househ)) + 
+# #   scale_fill_continuous(type = "viridis") +
+# #   coord_sf(xlim = c(-69.15, -68.75),
+# #            ylim = c(12.0, 12.4)) +
+# #   ggtitle("Geozones avg household size 2011") +
+# #   theme_minimal()
+# # 
+# # p5 <- ggplot() +
+# #   geom_sf(data = cur_coastline) +
+# #   geom_sf(data = neighborhoods, aes(fill = Pop_2011)) + 
+# #   scale_fill_continuous(type = "viridis") +
+# #   coord_sf(xlim = c(-69.15, -68.75),
+# #            ylim = c(12.0, 12.4)) +
+# #   ggtitle("Geozones total pop 2011") +
+# #   theme_minimal()
+# # 
+# # p6 <- ggplot() +
+# #   geom_sf(data = cur_coastline) +
+# #   geom_sf(data = neighborhoods, aes(fill = Dens_2011)) + 
+# #   scale_fill_continuous(type = "viridis") +
+# #   coord_sf(xlim = c(-69.15, -68.75),
+# #            ylim = c(12.0, 12.4)) +
+# #   ggtitle("Geozones pop dens 2011") +
+# #   theme_minimal()
+# # 
+# # cowplot::plot_grid(p1, p2, p3, p4, p5, p6,
+# #                    ncol = 3)
+#   
+# # extract total population, density, households per geozone
+# # extract total population, density, households per neighborhood
+# 
+# 
+# ### add elevation ###
+# 
+# 
 
 ###############################################################################
 # Adjust HCO3 values
@@ -210,13 +364,13 @@ d_meta <- d_meta %>%
 # RW002 -> use HCO3 lab
 # SR003 -> use different HCO3 titration -> adjusted in alkalinity sheet
 
-## Convert Alkalinity as CaCO3 to HCO3??? ##
+## Convert Alkalinity as CaCO3 to HCO3??? ## already done in alkalinity sheet?
 
 data$parameter <- data$parameter %>%
   recode("HCO3" = "HCO3_field")
 d <- data %>%
   filter(parameter %in% c("HCO3_field", "HCO3_lab")) %>%
-  select(samplecode, parameter, value) %>%
+  dplyr::select(samplecode, parameter, value) %>%
   pivot_wider(values_from = value,
               names_from = parameter) %>%
   mutate(HCO3 = case_when(
@@ -322,7 +476,7 @@ d <- data1977_1992 %>%
          xcoord = lon,
          ycoord = lat) %>%
   filter(!is.na(putcode)) %>%
-  select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
+  dplyr::select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
 
 # correct some values for pH and change high PO4 concentration for samplecode 1992_96 that is factor 1000 too high
@@ -337,20 +491,25 @@ d <- d %>%
 set <- d %>%
   filter(year == 1992) %>%
   group_by(putcode, samplecode, year, notes, watercode, sampletype, subtype, xcoord, ycoord) %>%
-  summarise(parameter = c("Pb", "F"),
+  reframe(parameter = c("Pb", "F"),
             value = c(0.04, 0.1),
             sd = NA,
             limit_symbol = "<",
             detection_limit = c(0.04, 0.1),
             units = "mg/l",
             method = c("ICP-AES", "IC Dionex QIC")) %>%
-  select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
-         units, method, notes, watercode, sampletype, subtype, xcoord, ycoord)
+  dplyr::select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
+         units, method, notes, watercode, sampletype, subtype, xcoord, ycoord) %>%
+  distinct()
+# final for 1992
 d <- rbind(d, set)
 
 ## add data from 2021 Jessie ##
-
-
+d <- rbind(d, d_2020 %>% mutate(units = case_when(
+  units ~ "ug/L" ~ "ug/l",
+  units ~ "mg/L" ~ "mg/l",
+  TRUE ~ units
+)))
 
 ## final adjustments for 2021-2022
 dat <- data %>% mutate(putcode = case_when(
@@ -400,11 +559,11 @@ dat <- data %>% mutate(putcode = case_when(
                               parameter = case_when(
                                 parameter == "EC_uS" ~ "EC",
                                 TRUE ~ parameter)) %>%
-  left_join(., metadata %>% select(samplecode, xcoord, ycoord))
+  left_join(., metadata %>% dplyr::select(samplecode, xcoord, ycoord))
 
 ## add everything together
 data <- rbind(dat, d) %>%
-  select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
+  dplyr::select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord) %>%
   arrange(year, samplecode, parameter) %>%
   # change pH units
@@ -420,13 +579,23 @@ data %>%
   ggplot(., aes(x = parameter, y = value)) +
   geom_boxplot() +
   theme_bw()
+
+data %>%
+  filter(parameter == "HCO3",
+         sampletype == "groundwater") %>%
+  ggplot(., aes(x = as.character(year), y = value, group = year)) +
+  geom_boxplot() +
+  scale_y_continuous("HCO3 (mg/L)") +
+  scale_x_discrete("") +
+  theme_bw()
   
 data %>%
   filter(parameter == "PO4",
-         sampletype == "groundwater",
-         value < 1000) %>%
+         sampletype == "groundwater") %>%
   ggplot(., aes(x = as.character(year), y = value, group = year)) +
   geom_boxplot() +
+  scale_y_continuous("PO4 (mg/L)") +
+  scale_x_discrete("") +
   coord_cartesian(ylim = c(0, 8)) +
   theme_bw()
 
@@ -436,7 +605,18 @@ data %>%
          value < 1000) %>%
   ggplot(., aes(x = value, group = year, fill = as.character(year))) +
   geom_histogram(binwidth = .5, alpha = 0.5, position = "identity") +
-  #geom_density(alpha = 0.2) +
+  # geom_density() +
+  # coord_cartesian(xlim = c(0, 5)) +
+  theme_bw()
+
+data %>%
+  filter(parameter == "PO4",
+         sampletype == "groundwater",
+         value < 1000) %>%
+  ggplot(., aes(x = value, group = year, fill = as.character(year))) +
+  geom_histogram(binwidth = .5, alpha = 0.5, position = "identity") +
+  facet_wrap(facets = "year") +
+  scale_x_continuous("PO4 mg/L") +
   theme_bw()
 
 ###############################################################################
@@ -444,9 +624,10 @@ data %>%
 ###############################################################################
 
 # hydrochemistry
-openxlsx::write.xlsx(data %>% filter(!sampletype %in% c("air", "Mi", "Ta")), paste0(output, "hydrochemistry_curacao.xlsx"))
+openxlsx::write.xlsx(data %>% filter(!sampletype %in% c("air", "Mi", "Ta")), 
+                     paste0(output, "hydrochemistry_curacao.xlsx"))
 
 # metadata file
-openxlsx::write.xlsx(d_meta, paste0(output, "metadata_2021_2022.xlsx"))
+# openxlsx::write.xlsx(d_meta, paste0(output, "metadata_2021_2022.xlsx"))
 
 

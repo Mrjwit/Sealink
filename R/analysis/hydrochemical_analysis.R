@@ -19,7 +19,7 @@
 
 # Loading packages
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, openxlsx, ggmap, devtools,
+pacman::p_load(tidyverse, openxlsx, ggmap, devtools,scales,
                sf, cowplot, scales, corrplot, Hmisc, ggpubr,
                ggbiplot, ggcorrplot, psych, FactoMineR, polynom)
 
@@ -38,6 +38,7 @@ input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/final_merged/"
 # load cleaned data
 data <- openxlsx::read.xlsx(paste0(input, "hydrochemistry_curacao.xlsx"))
 metadata <- openxlsx::read.xlsx(paste0(input, "metadata_2021_2022.xlsx"))
+meta_2020 <- openxlsx::read.xlsx(paste0(input, "metadata_2020.xlsx"))
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -74,10 +75,29 @@ data %>% filter(year %in% c(1992, 2021, 2022),
   theme_bw() +
   facet_wrap(facets = "parameter")
 
-# add geology and land use
+# add geology and land use for 2021-2022
+meta <- rbind(metadata %>% select(samplecode, geology, geology_abr, 
+                                  landuse_zonal_map, Land.use.based.on.own.observations),
+              meta_2020 %>% select(samplecode, geology, geology_abr) %>%
+                mutate(landuse_zonal_map = "",
+                       Land.use.based.on.own.observations = ""))
+
 data <- data %>%
-  left_join(., metadata %>% select(samplecode, geology, geology_abr, 
-                                   landuse_zonal_map, Land.use.based.on.own.observations))
+  left_join(., meta)
+
+
+#check geologies per year
+dat <- data %>% 
+  filter(sampletype == "groundwater") %>%
+  group_by(geology, year) %>%
+  summarise(n = n_distinct(samplecode))
+
+ggplot(dat %>% filter(year >2000), aes(y = geology, x = n, group = as.factor(year))) +
+  geom_col(aes(fill = as.factor(year)), position = "dodge") +
+  theme_bw()
+
+ggplot(dat %>% filter(year >2000), aes(x = year, y = n)) +
+  geom_col(aes(fill = geology), position = "dodge")
 
 # metadata %>% 
 #   group_by(Geology) %>%
@@ -139,115 +159,6 @@ d <- data %>%
 
 # save watertypes for GIS viewing
 write.csv(d, paste0("C:/Users/mikewit/Documents/SEALINK/", "GIS/SEALINK/Data/Wells/hydrochemistry_2022.csv"))
-
-# wide format with ratios
-SO4sea <- data %>% filter(sampletype == "seawater", parameter == "SO4") %>% pull(value) %>% mean()
-Clsea <- data %>% filter(sampletype == "seawater", parameter == "Cl") %>% pull(value) %>% mean()
-
-d_wide <- data %>%
-  #filter(year > 2020) %>%
-  # remove isotopes until accurate measurements are included
-  filter(method != "IA") %>%
-  mutate(parameter = paste(parameter, units)) %>%
-  select(putcode, samplecode, parameter, value, watercode, sampletype, subtype, geology) %>%
-  distinct() %>%
-  # put in wide format
-  pivot_wider(names_from = parameter,
-              values_from = value) %>%
-  # calculate ratios
-  mutate(`B/Cl` = (`B ug/l`/1000) / `Cl mg/l`,
-         `Ca/Cl` = `Ca mg/l` / `Cl mg/l`,
-         `SO4/Cl` = `SO4 mg/l` / `Cl mg/l`,
-         `SO4 cons/prod` = `SO4 mg/l` - (`Cl mg/l` * SO4sea/Clsea))
-
-# data %>%
-#   dplyr::group_by(putcode, samplecode, watercode, sampletype, subtype, parameter) %>%
-#   dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
-#   dplyr::filter(n > 1L)
-
-data %>%
-  filter(year == 2022) %>%
-  select(samplecode, sampletype, parameter, value) %>%
-  filter(parameter %in% c("B", "Cl", "EC")) %>%
-  #filter(sampletype != "groundwater") %>%
-  pivot_wider(names_from = parameter,
-              values_from = value)
-
-d %>%
-  select(samplecode, sampletype, subtype, `EC uS/cm`, `B ug/l`, `Cl mg/l`, `B/Cl`) %>%
-  #filter(sampletype != "groundwater") %>%
-  view()
-
-summ <- d %>% 
-  group_by(sampletype) %>%
-  summarise(n = n(),
-            `avg_B/Cl` = mean(`B/Cl`, na.rm = T),
-            `med_B/Cl` = median(`B/Cl`, na.rm = T),
-            avg_Cl = mean(`Cl mg/l`, na.rm = T),
-            med_Cl = median(`Cl mg/l`, na.rm = T))
-
-p1 <- ggplot(data = d, aes(x = `B/Cl`, y = fct_rev(sampletype))) +
-  geom_boxplot(fill = "lightgrey") +
-  labs(y = "") +
-  theme_bw() 
-
-p2 <- ggplot(data = d, aes(x = `B/Cl`, y = subtype)) +
-  geom_boxplot() +
-  theme_bw() 
-
-sl <- ((summ[6,4]-summ[1,4])/(summ[6,6]-summ[1,6]))
-intc <- summ[6,4] - summ[6,6] * sl
-
-p3 <- ggplot(data = d %>% filter(!sampletype %in% c("rainwater", "seawater")), 
-             aes(x = `Cl mg/l`, y = `B/Cl`)) +
-  geom_point(aes(color = sampletype)) +
-  geom_smooth(formula = y ~ x) +
-  geom_abline(intercept = intc$`med_B/Cl`, slope = sl$`med_B/Cl`, linetype = "dashed") +
-  coord_cartesian(xlim = c(0, 1000)) +
-  theme_bw() +
-  theme(legend.position = c(0.9, 0.65))
-
-# Ca/Cl 
-p1 <- ggplot(data = d, aes(x = `Ca/Cl`, y = fct_rev(sampletype))) +
-  geom_boxplot(fill = "lightgrey") +
-  labs(y = "") +
-  theme_bw() 
-
-p3 <- ggplot(data = d, 
-             aes(x = `Cl mg/l`, y = `Ca/Cl`)) +
-  geom_point(aes(color = sampletype)) +
-  geom_smooth(formula = y ~ x) +
-  #geom_abline(intercept = intc$`med_B/Cl`, slope = sl$`med_B/Cl`, linetype = "dashed") +
-  coord_cartesian(xlim = c(0, 1000)) +
-  theme_bw() 
-#theme(legend.position = c(0.9, 0.65))
-
-cowplot::plot_grid(p1, p3, ncol = 1, labels = "AUTO")
-
-# SO4/Cl 
-p1 <- ggplot(data = d, aes(x = `SO4/Cl`, y = fct_rev(sampletype))) +
-  geom_boxplot(fill = "lightgrey") +
-  labs(y = "") +
-  theme_bw() 
-
-p3 <- ggplot(data = d, 
-             aes(x = `Cl mg/l`, y = `SO4/Cl`)) +
-  geom_point(aes(color = sampletype)) +
-  geom_smooth(formula = y ~ x) +
-  #geom_abline(intercept = intc$`med_B/Cl`, slope = sl$`med_B/Cl`, linetype = "dashed") +
-  coord_cartesian(xlim = c(0, 1000)) +
-  theme_bw() 
-#theme(legend.position = c(0.9, 0.65))
-
-cowplot::plot_grid(p1, p3, ncol = 1, labels = "AUTO")
-
-ggplot(data = d_wide %>% filter(sampletype == "groundwater"), 
-       aes(x = `Cl mg/l`, y = `SO4 cons/prod`)) +
-  geom_point(aes(color = geology), alpha = 0.7) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(y = "SO4 consumed(-)/produced(+) mg/L",
-       title = "Groundwater sulphate consumption/production") +
-  theme_bw() 
 
 ###############################################################################
 # Data overview
@@ -447,8 +358,8 @@ an <- c("Cl", "HCO3", "NO3", "PO4", "SO4")
 cat <- c("Na", "Ca", "Mg", "Fe", "K", "NH4")
 
 d <- data %>%
-  filter(year == 2021, 
-         parameter %in% c(an, cat, "EC_uS")) %>%
+  filter(year %in% c(2021, 2022), 
+         parameter %in% c(an, cat, "EC")) %>%
   filter(!str_detect(method, "PHOS"),
          units != "mg N/L") %>%                    
   # change mg/l to meq/l for anions
@@ -461,7 +372,7 @@ d <- data %>%
     parameter == "SO4" ~ value / 96.06 * 2,
     #parameter == "Br" ~ value / 79.904,
     #parameter == "F" ~ value / 18.998403,
-    parameter == "EC_uS" ~ value,
+    parameter == "EC" ~ value,
     TRUE ~ NA_real_ )) %>%
   mutate(meql = case_when(
     parameter == "Na" ~ value / 22.989769,
@@ -494,11 +405,11 @@ toPercent <- function (d) {
 }
 
 dat <- toPercent(d) %>%
-  select(samplecode, sampletype, geology, EC_uS, Cl, SO4, HCO3, Na, K, Ca, Mg)
+  select(samplecode, sampletype, geology, EC, Cl, SO4, HCO3, Na, K, Ca, Mg)
 
 # takes percentage data and converts them to xy coordinates for plotting
 transform_piper_data <- function(Mg, Ca, Cl, SO4, name=samplecode, 
-                                 sampletype=sampletype, geology=geology, EC_uS=EC_uS){
+                                 sampletype=sampletype, geology=geology, EC=EC){
   if(is.null(name)){
     name = rep(1:length(Mg),3)
   } else {
@@ -519,12 +430,11 @@ transform_piper_data <- function(Mg, Ca, Cl, SO4, name=samplecode,
   np_list <- lapply(1:length(x1), function(i) new_point(x1[i], x2[i], y1[i], y2[i]))
   npoints <- do.call("rbind",np_list)
   data.frame(observation=name,x=c(x1, x2, npoints$x), y=c(y=y1, y2, npoints$y), 
-             sampletype = sampletype, geology = geology, EC = EC_uS)
+             sampletype = sampletype, geology = geology, EC = EC)
 }
 
-piper.data <- transform_piper_data(dat$Mg, dat$Ca, dat$Cl, dat$SO4, dat$samplecode, dat$sampletype, dat$geology, dat$EC_uS)
-piper.data <- piper.data %>%
-  mutate(date = 2021)
+piper.data <- transform_piper_data(dat$Mg, dat$Ca, dat$Cl, dat$SO4, dat$samplecode, dat$sampletype, dat$geology, dat$EC)
+piper.data <- piper.data 
 
 ggplot_piper <- function(piper.data, output = c("ggplot","plotly"), scale = sampletype) {
   grid1p1 <<- data.frame(x1 = c(20,40,60,80), x2= c(10,20,30,40),y1 = c(0,0,0,0), y2 = c(17.3206,34.6412,51.9618, 69.2824))
@@ -657,9 +567,9 @@ ggplot_piper <- function(piper.data, output = c("ggplot","plotly"), scale = samp
       ggplot2::geom_text(ggplot2::aes(77.5,50, label="Na^'+'~+~K^'+'"), angle=-60, size=4,parse=TRUE) +
       ggplot2::geom_text(ggplot2::aes(50,-10, label="Ca^'2+'"), size=4, parse=TRUE) +
       ggplot2::geom_text(ggplot2::aes(170,-10, label="Cl^'-'"), size=4, parse=TRUE) +
-      ggplot2::geom_text(ggplot2::aes(205,50, label="SO[4]^'-'"), angle=-60, size=4, parse=TRUE) +
+      ggplot2::geom_text(ggplot2::aes(205,50, label="SO[4]^'2-'"), angle=-60, size=4, parse=TRUE) +
       ggplot2::geom_text(ggplot2::aes(142,50, label="Alkalinity~as~HCO[3]^'-'"), angle=60, size=4, parse=TRUE) +
-      ggplot2::geom_text(ggplot2::aes(72.5,150, label="SO[4]^'-'~+~Cl^'-'"), angle=60, size=4, parse=TRUE) +
+      ggplot2::geom_text(ggplot2::aes(72.5,150, label="SO[4]^'2-'~+~Cl^'-'"), angle=60, size=4, parse=TRUE) +
       ggplot2::geom_text(ggplot2::aes(147.5,150, label="Ca^'2+'~+~Mg^'2+'"), angle=-60, size=4, parse=TRUE)
   }
   
@@ -690,14 +600,14 @@ ggplot_piper <- function(piper.data, output = c("ggplot","plotly"), scale = samp
 
 # Make piper diagram with different versions using geology, EC and watertype
 ggplot_piper(piper.data, output = "ggplot", scale = "sampletype")
-ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_sampletype.png"),
-       width = 6, height = 6)
+# ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_sampletype.png"),
+#        width = 6, height = 6)
 ggplot_piper(piper.data, output = "ggplot", scale = "geology")
-ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_geology.png"),
-       width = 6, height = 6)
+# ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_geology.png"),
+#        width = 6, height = 6)
 ggplot_piper(piper.data, output = "ggplot", scale = "EC")
-ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_EC.png"),
-       width = 6, height = 6)
+# ggsave(paste0(output, "Output/Figures/Hydrochemistry/piperdiagram_2021_allsamples_per_EC.png"),
+#        width = 6, height = 6)
 
 # just groundwater
 ggplot_piper(piper.data %>% filter(sampletype == "groundwater"), output = "ggplot", scale = "geology")
@@ -950,6 +860,156 @@ d <- d %>%
 
 # save watertypes for GIS viewing
 write.csv(d, paste0("C:/Users/mikewit/Documents/SEALINK/", "GIS/SEALINK/Data/samples_watertypes.csv"))
+
+##########################################################################
+# Ionic ratios in groundwater
+##########################################################################
+
+## wide format with ratios
+SO4sea <- data %>% filter(sampletype == "seawater", parameter == "SO4") %>% pull(value) %>% mean()
+Clsea <- data %>% filter(sampletype == "seawater", parameter == "Cl") %>% pull(value) %>% mean()
+
+d_wide <- data %>%
+  filter(year > 2020) %>%
+  # remove isotopes until accurate measurements are included
+  filter(method != "IA") %>%
+  mutate(parameter = paste(parameter, units)) %>%
+  select(putcode, samplecode, year, parameter, value, watercode, sampletype, subtype, geology) %>%
+  distinct() %>%
+  # put in wide format
+  pivot_wider(names_from = parameter,
+              values_from = value) %>%
+  # calculate ratios
+  mutate(`B/Cl` = (`B ug/l`/1000) / `Cl mg/l`,
+         `Cl/B` = `Cl mg/l` / (`B ug/l`/1000),
+         `Br/Cl` = (`Br mg/l` / `Cl mg/l`),
+         `Ca/Cl` = `Ca mg/l` / `Cl mg/l`,
+         `SO4/Cl` = `SO4 mg/l` / `Cl mg/l`,
+         `SO4 cons/prod` = `SO4 mg/l` - (`Cl mg/l` * SO4sea/Clsea))
+
+# data %>%
+#   dplyr::group_by(putcode, samplecode, watercode, sampletype, subtype, parameter) %>%
+#   dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+#   dplyr::filter(n > 1L)
+
+data %>%
+  filter(year == 2022) %>%
+  select(samplecode, sampletype, parameter, value) %>%
+  filter(parameter %in% c("B", "Cl", "EC")) %>%
+  #filter(sampletype != "groundwater") %>%
+  pivot_wider(names_from = parameter,
+              values_from = value)
+
+d %>%
+  select(samplecode, sampletype, subtype, `EC uS/cm`, `B ug/l`, `Cl mg/l`, `B/Cl`) %>%
+  #filter(sampletype != "groundwater") %>%
+  view()
+
+summar <- d_wide %>% 
+  group_by(sampletype) %>%
+  summarise(n = n(),
+            avg_B = mean(`B ug/l`, na.rm = T),
+            med_B = median(`B ug/l`, na.rm = T),
+            avg_Cl = mean(`Cl mg/l`, na.rm = T),
+            med_Cl = median(`Cl mg/l`, na.rm = T),
+            `avg_B/Cl` = mean(`B/Cl`, na.rm = T),
+            `med_B/Cl` = median(`B/Cl`, na.rm = T),
+            `avg_Cl/B` = mean(`Cl/B`, na.rm = T),
+            `med_Cl/B` = median(`Cl/B`, na.rm = T))
+
+# B/Cl ratio
+p1 <- ggplot(data = d_wide, aes(x = `B/Cl`, y = fct_rev(sampletype))) +
+  geom_boxplot(fill = "lightgrey") +
+  labs(y = "") +
+  theme_bw() 
+
+p2 <- ggplot(data = d_wide, aes(x = `B/Cl`, y = subtype)) +
+  geom_boxplot(fill = "lightgrey") +
+  labs(y = "") +
+  theme_bw() 
+
+m <- ((summ[6,8]-summ[1,8])/(summ[6,6]-summ[1,6]))
+b <- summ[6,8] - summ[6,6] * sl
+
+p3 <- ggplot(data = d_wide %>% filter(!sampletype %in% c("rainwater", "seawater")), 
+             aes(x = `Cl mg/l`, y = `B/Cl`)) +
+  geom_point(aes(color = sampletype)) +
+  geom_smooth(formula = y ~ x) +
+  geom_abline(intercept = b$`med_B/Cl`, slope = m$`med_B/Cl`, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 1000)) +
+  theme_bw() +
+  theme(legend.position = c(0.9, 0.65))
+
+cowplot::plot_grid(p1, p2, p3, ncol = 1, labels = "AUTO")
+
+# Ca/Cl 
+p1 <- ggplot(data = d, aes(x = `Ca/Cl`, y = fct_rev(sampletype))) +
+  geom_boxplot(fill = "lightgrey") +
+  labs(y = "") +
+  theme_bw() 
+
+p3 <- ggplot(data = d, 
+             aes(x = `Cl mg/l`, y = `Ca/Cl`)) +
+  geom_point(aes(color = sampletype)) +
+  geom_smooth(formula = y ~ x) +
+  #geom_abline(intercept = intc$`med_B/Cl`, slope = sl$`med_B/Cl`, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 1000)) +
+  theme_bw() 
+#theme(legend.position = c(0.9, 0.65))
+
+cowplot::plot_grid(p1, p3, ncol = 1, labels = "AUTO")
+
+# SO4/Cl 
+p1 <- ggplot(data = d_wide, aes(x = `SO4/Cl`, y = fct_rev(sampletype))) +
+  geom_boxplot(fill = "lightgrey") +
+  labs(y = "") +
+  theme_bw() 
+
+p2 <- ggplot(data = d_wide, 
+             aes(x = `Cl mg/l`, y = `SO4/Cl`)) +
+  geom_point(aes(color = sampletype)) +
+  geom_smooth(formula = y ~ x) +
+  #geom_abline(intercept = intc$`med_B/Cl`, slope = sl$`med_B/Cl`, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 1000)) +
+  theme_bw() 
+#theme(legend.position = c(0.9, 0.65))
+
+cowplot::plot_grid(p1, p2, ncol = 1, labels = "AUTO")
+
+ggplot(data = d_wide %>% filter(sampletype == "groundwater", year > 2000), 
+       aes(x = `Cl mg/l`, y = `SO4 cons/prod`)) +
+  geom_point(aes(color = geology), alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(y = "SO4 consumed(-)/produced(+) mg/L",
+       title = "Groundwater sulphate consumption/production") +
+  theme_bw() 
+
+ggplot(data = d_wide %>% filter(sampletype == "groundwater", year > 2000), 
+       aes(x = `Cl mg/l`, y = `SO4 cons/prod`)) +
+  geom_point(aes(color = geology), alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 7500)) +
+  labs(y = "SO4 consumed(-)/produced(+) mg/L",
+       title = "Groundwater sulphate consumption/production") +
+  theme_bw() 
+
+ggplot(data = d_wide %>% filter(sampletype == "groundwater", year > 2000),
+       aes(x = `Cl mg/l`, y = `SO4 cons/prod`)) +
+  geom_boxplot(aes(fill = geology))
+
+ggplot(data = d_wide %>% filter(sampletype == "groundwater", year > 2000),
+       aes(x = `SO4 cons/prod`, y = fct_rev(geology))) +
+  geom_boxplot(aes(fill = geology))
+
+ggplot(data = d_wide %>% filter(sampletype == "groundwater", year > 2000, geology %in% c("Curacao Lava Formation East", "Curacao Lava Formation West")),
+       aes(x = fct_rev(geology), y = `SO4 cons/prod`)) +
+  geom_boxplot(aes(fill = geology)) +
+  labs(x = "") +
+  theme_mw()
+
+d_wide %>% filter(year > 2000) %>% select(samplecode, year, geology, `SO4 mg/l`, `Cl mg/l`, `SO4 cons/prod`) %>% view()
+
+
 
 #### Hierarchical Cluster Analysis #### 
 
@@ -1220,10 +1280,10 @@ an <- c("Cl", "HCO3", "NO3", "PO4", "SO4")
 cat <- c("Na", "Ca", "Mg", "Fe", "K", "NH4")
 
 d_meql <- data %>%
-  filter(year == 2021, 
-         parameter %in% c(an, cat),
+  filter(year > 2020, 
+         parameter %in% c(an, cat, "EC"),
          samplecode != "SP001B",
-         sampletype == "groundwater") %>%
+         sampletype %in% c("groundwater", "seawater")) %>%
   # remove PO4 with IC measurements
   mutate(remove = ifelse(method == "IC" & parameter == "PO4", 1, 0)) %>%
   filter(remove == 0,
@@ -1238,7 +1298,7 @@ d_meql <- data %>%
     parameter == "SO4" ~ value / 96.06 * 2,
     parameter == "Br" ~ value / 79.904,
     parameter == "F" ~ value / 18.998403,
-    parameter == "EC_uS" ~ value,
+    parameter == "EC" ~ value,
     TRUE ~ NA_real_ )) %>%
   mutate(meql = case_when(
     parameter == "Na" ~ value / 22.989769,
@@ -1249,87 +1309,341 @@ d_meql <- data %>%
     parameter == "K" ~ value / 39.0983,
     parameter == "NH4" ~ value / 18.04, # parameter == "NH4" & limit_symbol != "<" ~ value / 18.04, # dl NH4 = 0.053 mg/l (NH41) or 0.258 m/gl (NH410) = 0.002937916 meq/l / 0.01430155 meq/l
     TRUE ~ meql )) %>%
-  select(samplecode, parameter, meql, sampletype) %>%
+  select(samplecode, year, parameter, meql, sampletype) %>%
   pivot_wider(names_from = parameter,
               values_from = meql) %>%
   filter(!is.na(Cl))
 
+# add metadata
+d_meql <- d_meql %>%
+  left_join(., d_meta %>% select(samplecode, `Well.depth.below.surface.(m)`, 
+                                 `Groundwater.level.below.surface.(m)`,
+                                 sample_depth,
+                                 geology, geology_abr, landuse_zonal_map, dist.coast, 
+                                 geozone, geoz_pop, geoz_dens, geoz_house, geoz_avg_house, 
+                                 neigh, neigh_dens, elevation)) %>%
+  mutate(geology = ifelse(geology == "Knip Group - intrusive", "Knip Group", geology))
+
+# seawater avg concentrations
+sw <- d_meql %>%
+  filter(sampletype == "seawater") %>%
+  select(Ca:SO4) %>%
+  colMeans(.)
+
+# Plots against Cl
+# Na vs Cl
+y1 <- sw[10]
+y0 <- 0
+x1 <- sw[2]
+x0 <- 0
+# for linear
+m <- (y1 - y0) / (x1 - x0)
+b <- y1 - m*x1
+# for linear line in log-log plot so that it doesnt plot through (1,1)
+dat <- data.frame(x = c(1E-20, x1),
+                  y = c(1E-20*m, y1))
+
+# Halite dissolution ? --> Na depletion/enrichment --> cation exchange --> freshening/salinization?
+p1 <- ggplot(d_meql, aes(x = Cl, y = Na)) +
+  geom_point(aes(color = geology, shape = sampletype), alpha = 0.7) +
+  # add seawater ratio mixing line
+  geom_line(data = dat, aes(x = x, y = y), linetype = "dashed", colour = "black") +
+  scale_x_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10") +
+  coord_cartesian(xlim = c(0.5, 1000),
+                  ylim = c(0.5, 1000)) +
+  labs(x = expression('Cl'^'-'~'(meq/L)'),
+       y = expression('Na'^'+'~'(meq/L)'),
+       title = "Na vs Cl",
+       subtitle = "More Na depletion due to cation exchange for Ca (salinization?)") +
+  theme_bw() +
+  theme(#panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "none") +
+  annotation_logticks(sides = "bl")
+
+# K vs Cl
+y1 <- sw[6]
+y0 <- 0
+x1 <- sw[2]
+x0 <- 0
+# for linear
+m <- (y1 - y0) / (x1 - x0)
+b <- y1 - m*x1
+# for linear line in log-log plot so that it doesnt plot through (1,1)
+dat <- data.frame(x = c(1E-20, x1),
+                  y = c(1E-20*m, y1))
+# K is largely removed --> fixation of K by illite clays (weathering product of diabase)
+p2 <- ggplot(d_meql, aes(x = Cl, y = K)) + 
+  geom_point(aes(color = geology, shape = sampletype), alpha = 0.7) +
+  # add seawater ratio mixing line
+  geom_line(data = dat, aes(x = x, y = y), linetype = "dashed", colour = "black") +
+  scale_x_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10"
+                     #breaks = trans_breaks("log10", function(x) 10^x),
+                     #labels = trans_format("log10", math_format(10^.x))
+                     ) +
+  coord_cartesian(xlim = c(0.5, 1000),
+                  ylim = c(0.001, round(max(d_meql$K),0))) +
+  labs(x = expression('Cl'^'-'~'(meq/L)'),
+       y = expression('K'^'+'~'(meq/L)'),
+       title = "K vs Cl",
+       subtitle = "K depletion by fixation on illite clays (weathering product of diabase)?") +
+  theme_bw() +
+  theme(#panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "none") +
+  annotation_logticks(sides = "bl")
+
+# Ca vs Cl
+y1 <- sw[1]
+y0 <- 0
+x1 <- sw[2]
+x0 <- 0
+# for linear
+m <- (y1 - y0) / (x1 - x0)
+b <- y1 - m*x1
+# for linear line in log-log plot so that it doesnt plot through (1,1)
+dat <- data.frame(x = c(1E-20, x1),
+                  y = c(1E-20*m, y1))
+# Ca enrichment due to calcite dissolution and cation exchange
+p3 <- ggplot(d_meql, aes(x = Cl, y = Ca)) + 
+  geom_point(aes(color = geology, shape = sampletype), alpha = 0.7) +
+  # add seawater ratio mixing line
+  geom_line(data = dat, aes(x = x, y = y), linetype = "dashed", colour = "black") +
+  scale_x_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10") +
+  coord_cartesian(xlim = c(0.5, 1000),
+                  ylim = c(0.5, round(max(d_meql$Ca),0))) +
+  labs(x = expression('Cl'^'-'~'(meq/L)'),
+       y = expression('Ca'^'2+'~'(meq/L)'),
+       title = "Ca vs Cl",
+       subtitle = "Ca enrichment by calcite dissolution and cation exchange") +
+  theme_bw() +
+  theme(#panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "none") +
+  annotation_logticks(sides = "bl")
+
+# Mg vs Cl
+y1 <- sw[7]
+y0 <- 0
+x1 <- sw[2]
+x0 <- 0
+# for linear
+m <- (y1 - y0) / (x1 - x0)
+b <- y1 - m*x1
+# for linear line in log-log plot so that it doesnt plot through (1,1)
+dat <- data.frame(x = c(1E-20, x1),
+                  y = c(1E-20*m, y1))
+# Mg enrichment --> dolomite dissolution, dissolution of silicates: olivines, pyroxenes and hornblende? Cation-exchange? but less than Ca enrichment
+p4 <- ggplot(d_meql, aes(x = Cl, y = Mg)) + 
+  geom_point(aes(color = geology, shape = sampletype), alpha = 0.7) +
+  # add seawater ratio mixing line
+  geom_line(data = dat, aes(x = x, y = y), linetype = "dashed", colour = "black") +
+  scale_x_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10") +
+  coord_cartesian(xlim = c(0.5, 1000),
+                  ylim = c(0.5, round(max(d_meql$Mg),0))) +
+  labs(x = expression('Cl'^'-'~'(meq/L)'),
+       y = expression('Mg'^'2+'~'(meq/L)'),
+       title = "Mg vs Cl",
+       subtitle = "Mg enrichment ...") +
+  theme_bw() +
+  theme(#panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "none") +
+  annotation_logticks(sides = "bl")
+
+# HCO3 vs Cl
+y1 <- sw[5]
+y0 <- 0
+x1 <- sw[2]
+x0 <- 0
+# for linear
+m <- (y1 - y0) / (x1 - x0)
+b <- y1 - m*x1
+# for linear line in log-log plot so that it doesnt plot through (1,1)
+dat <- data.frame(x = c(1E-20, x1),
+                  y = c(1E-20*m, y1))
+# Elevated HCO3 due to dissolution
+p5 <- ggplot(d_meql, aes(x = Cl, y = HCO3)) + 
+  geom_point(aes(color = geology, shape = sampletype), alpha = 0.7) +
+  # add seawater ratio mixing line
+  geom_line(data = dat, aes(x = x, y = y), linetype = "dashed", colour = "black") +
+  scale_x_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10") +
+  coord_cartesian(xlim = c(0.5, 1000),
+                  ylim = c(0.5, round(max(d_meql$HCO3),0))) +
+  labs(x = expression('Cl'^'-'~'(meq/L)'),
+       y = expression(HCO[3]^'-'~'(meq/L)'),
+       title = "HCO3 vs Cl",
+       subtitle = "Elevated HCO3 due to carbonate dissolution (and possibly wastewater?)") +
+  theme_bw() +
+  theme(#panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "none") +
+  annotation_logticks(sides = "bl")
+
+# SO4 vs Cl
+y1 <- sw[12]
+y0 <- 0
+x1 <- sw[2]
+x0 <- 0
+# for linear
+m <- (y1 - y0) / (x1 - x0)
+b <- y1 - m*x1
+# for linear line in log-log plot so that it doesnt plot through (1,1)
+dat <- data.frame(x = c(1E-20, x1),
+                  y = c(1E-20*m, y1))
+# Elevated SO4 ..
+p6 <- ggplot(d_meql, aes(x = Cl, y = SO4)) + 
+  geom_point(aes(color = geology, shape = sampletype), alpha = 0.7) +
+  # add seawater ratio mixing line
+  geom_line(data = dat, aes(x = x, y = y), linetype = "dashed", colour = "black") +
+  scale_x_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10") +
+  coord_cartesian(xlim = c(0.5, 1000),
+                  ylim = c(0.001, 100)) +
+  labs(x = expression('Cl'^'-'~'(meq/L)'),
+       y = expression(SO[4]^'2-'~'(meq/L)'),
+       title = "SO4 vs Cl log scale",
+       subtitle = "Mostly SO4 enrichment...") +
+  theme_bw() +
+  theme(#panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "none") +
+  annotation_logticks(sides = "bl")
+
+p7 <- ggplot(d_meql, aes(x = Cl, y = SO4)) + 
+  geom_point(aes(color = geology, shape = sampletype), alpha = 0.7) +
+  # add seawater ratio mixing line
+  geom_line(data = dat, aes(x = x, y = y), linetype = "dashed", colour = "black") +
+  scale_x_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10") +
+  scale_colour_discrete(name = "Geology", 
+                        labels = c("Diabase E", "Diabase W", 
+                                   "Sed. rocks (MCF)", "Complex sed. rocks (KG)", 
+                                   "Limestones", "Seawater")) +
+  scale_shape_discrete(name = "",
+                       labels = c("groundwater", "seawater")) +
+  theme_bw() +
+  theme(#panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom",
+    # legend.direction = "horizontal",
+    legend.box = "vertical"
+    #legend.text=element_text(size=2.5)
+    ) +
+  guides(shape = "none") +
+  annotation_logticks(sides = "bl")
+
+grobs <- ggplotGrob(p7)$grobs
+legend <- grobs[[which(sapply(grobs, function(x) x$name) == "guide-box")]]
+
+# Combine Cl plots
+p_graph <- cowplot::plot_grid(p1, p2, p3, p4, p5, p6, 
+                   ncol = 2, labels = "AUTO")
+cowplot::plot_grid(p_graph, legend, nrow = 2, rel_heights = c(1, 0.1))
+ggsave(paste0(output, "Output/Figures/Hydrochemistry/Biplots/Biplots_Cl.png"),
+       width = 12, height = 12)
+
+
 # Alkalis Na+K vs Ca+Mg
-ggplot(d_meql, aes(x = Na+K, y = Ca+Mg)) + 
-  geom_point() +
-  geom_abline(linetype = "dashed", colour = "red") +
-  scale_x_continuous(name = "(Na+K) (meq/l)") +
-  scale_y_continuous(name = "(Ca+Mg) (meq/l)") +
-  #annotate(geom = "text", x = 25, y = 40, label = "carbonate mineral dissolution", angle = 74, colour = "steelblue") + 
-  #annotate(geom = "text", x = 100, y = 15, label = paste("extra source of Ca+Mg", "reverse ion exchange", sep = "\n") , angle = 0, colour = "red") + 
-  ggtitle("(Na+K) vs (Ca+Mg)") +
-  theme_bw()
+# Enrichment of Ca+Mg with respect to Na+K --> cation exchange
+p1 <- ggplot(d_meql, aes(x = Na+K, y = Ca+Mg)) + 
+  geom_point(aes(colour = geology_abr, shape = sampletype), alpha = 0.6) +
+  geom_abline(linetype = "dashed", colour = "black") +
+  geom_abline(slope = 2, linetype = "dashed", colour = "black") +  
+  geom_abline(slope = 0.5, linetype = "dashed", colour = "black") +
+  geom_abline(slope = (sw[1]+sw[7])/(sw[10]+sw[6]),linetype = "dashed", colour = "red") +
+  labs(x = expression('Na'^'+'~+~'K'^'+'~'(meq/L)'),
+       y = expression('Ca'^'2+'~+~'Mg'^'2+'~'(meq/L)'),
+       title = "(Na+K) vs (Ca+Mg)") +
+  annotate(geom = "text", x = 180, y = 210, label = "1:1 line", angle = 50, colour = "steelblue") + 
+  annotate(geom = "text", x = 230, y = 50, label = "seawater mixing line" , angle = 15, colour = "red") + 
+  theme_bw() +
+  theme(legend.position = "none")
 
 # Ca+Mg vs HCO3+SO4
 # influence of carbonate mineral dissolution (calcite/dolomite)
-ggplot(d_meql, aes(x = Ca+Mg, y = HCO3+SO4)) + 
-  geom_point() +
-  geom_abline(linetype = "dashed", colour = "red") +
-  scale_x_continuous(name = "(Ca+Mg) (meq/l)") +
-  scale_y_continuous(name = "(HCO3+SO4) (meq/l)") +
-  annotate(geom = "text", x = 25, y = 40, label = "carbonate mineral dissolution", angle = 74, colour = "steelblue") + 
-  annotate(geom = "text", x = 100, y = 15, label = paste("extra source of Ca+Mg", "reverse ion exchange", sep = "\n") , angle = 0, colour = "red") + 
-  ggtitle("(Ca+Mg) vs (HCO3+SO4)") +
-  theme_bw()
+p2 <- ggplot(d_meql, aes(x = Ca+Mg, y = HCO3+SO4)) + 
+  geom_point(aes(colour = geology_abr, shape = sampletype), alpha = 0.7) +
+  geom_abline(linetype = "dashed", colour = "steelblue") +
+  geom_abline(slope = (sw[5]+sw[12])/(sw[1]+sw[7]),linetype = "dashed", colour = "red") +
+  annotate(geom = "text", x = 25, y = 40, label = "carbonate mineral dissolution", angle = 75, colour = "steelblue") + 
+  annotate(geom = "text", x = 200, y = 15, label = paste("extra source of Ca+Mg", "reverse ion exchange", sep = "\n") , angle = 0, colour = "black") + 
+  labs(x = expression(Ca^'2+'~+~Mg^'2+'~(meq/L)),
+       y = expression(HCO[3]^'-'~+~SO[4]^'2-'~(meq/L)),
+       title = "(Ca+Mg) vs (HCO3+SO4)") +
+  theme_bw() +
+  theme(legend.position = "none")
 
 # Ca vs HCO3
 # Role of carbonate/silicate minerals weathering
-ggplot(d_meql, aes(x = Ca, y = HCO3)) + 
-  geom_point() +
-  geom_abline(slope = 2, linetype = "dashed", colour = "red") +
-  #geom_abline(linetype = "dashed", colour = "red") +
-  scale_x_continuous(name = "Ca (meq/l)") +
-  scale_y_continuous(name = "HCO3 (meq/l)") +
-  annotate(geom = "text", x = 30, y = 38, label = "2:1 line", angle = 0, colour = "red") + 
-  annotate(geom = "text", x = 55, y = 8, label = "extra source of Ca", angle = 0, colour = "red") + 
-  ggtitle("Calcite dissolution") +
-  theme_bw()
+p3 <- ggplot(d_meql, aes(x = Ca, y = HCO3)) + 
+  geom_point(aes(colour = geology_abr, shape = sampletype), alpha = 0.7) +
+  geom_abline(slope = 2, linetype = "dashed", colour = "black") +
+  geom_abline(slope = (sw[5])/(sw[1]),linetype = "dashed", colour = "red") +
+  annotate(geom = "text", x = 30, y = 38, label = "2:1 line", angle = 0, colour = "black") + 
+  annotate(geom = "text", x = 55, y = 20, label = paste("extra source of Ca", "cation exchange", sep = "\n"), angle = 0, colour = "black") + 
+  labs(x = expression(Ca^'2+'~(meq/L)),
+       y = expression(HCO[3]^'-'~(meq/L)),
+       title = "Calcite dissolution line") +
+  theme_bw() +
+  theme(legend.position = "none")
 
 # Ca+Mg vs HCO3
 # Role of dolomite dissolution
-ggplot(d_meql, aes(x = Ca+Mg, y = HCO3)) + 
-  geom_point() +
-  geom_abline(linetype = "dashed", colour = "red") +
-  scale_x_continuous(name = "(Ca+Mg) (meq/l)") +
-  scale_y_continuous(name = "(HCO3) (meq/l)") +
-  annotate(geom = "text", x = 18, y = 25, label = "dolomite dissolution", angle = 79, colour = "steelblue") + 
-  annotate(geom = "text", x = 100, y = 15, label = paste("extra source of Ca+Mg", "reverse ion exchange", sep = "\n") , angle = 0, colour = "red") + 
-  ggtitle("(Ca+Mg) vs (HCO3)") +
-  theme_bw()
+p4 <- ggplot(d_meql, aes(x = Ca+Mg, y = HCO3)) + 
+  geom_point(aes(colour = geology_abr, shape = sampletype), alpha = 0.6) +
+  geom_abline(slope = 2, linetype = "dashed", colour = "steelblue") +
+  geom_abline(slope = (sw[5])/(sw[1]+sw[7]),linetype = "dashed", colour = "red") +
+  annotate(geom = "text", x = 5, y = 30, label = "2:1 line", angle = 84, colour = "steelblue") + 
+  annotate(geom = "text", x = 150, y = 12, label = paste("extra source of Ca+Mg", "reverse ion exchange", sep = "\n") , angle = 0, colour = "black") + 
+  labs(x = expression(Ca^'2+'~+~Mg^'2+'~(meg/L)),
+       y = expression(HCO[3]^'-'~(meq/L)),
+       title = "Dolomite dissolution line") +
+  theme_bw() +
+  theme(legend.position = "none")
 
 # Ca vs SO4
 # influence of gypsum dissolution
-ggplot(d_meql, aes(x = Ca, y = SO4)) + 
-  geom_point() +
-  geom_abline(linetype = "dashed", colour = "red") +
-  scale_x_continuous(name = "Ca (meq/l)") +
-  scale_y_continuous(name = "SO4 (meq/l)") +
-  annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
+p5 <- ggplot(d_meql, aes(x = Ca, y = SO4)) + 
+  geom_point(aes(colour = geology_abr, shape = sampletype), alpha = 0.7) +
+  geom_abline(linetype = "dashed", colour = "steelblue") +
+  geom_abline(slope = (sw[12])/(sw[1]),linetype = "dashed", colour = "red") +
+  annotate(geom = "text", x = 43, y = 51, label = "1:1 line", angle = 53, colour = "steelblue") + 
+  annotate(geom = "text", x = 60, y = 20, label = "Extra source of Ca", angle = 0, colour = "black") + 
   #annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
-  #annotate(geom = "text", x = 45, y = 50, label = "1:1 line gypsum dissolution", angle = 59, colour = "steelblue") + 
-  ggtitle("Ca vs SO4") +
-  theme_bw()
+  labs(x = expression(Ca^'2+'~(meq/L)),
+       y = expression(SO[4]^'2-'~(meq/L)),
+       title = "Gypsum dissolution line") +
+  theme_bw() +
+  theme(legend.position = "none")
 
-# Na vs Cl
-# Halite dissolution ? 
-ggplot(d_meql, aes(x = Na, y = Cl)) + 
-  geom_point() +
-  geom_abline(linetype = "dashed", colour = "red") +
-  # add seawater ratio mixing line
-  scale_x_continuous(name = "Na (meq/l)") +
-  scale_y_continuous(name = "Cl (meq/l)") +
-  ggtitle("Na vs Cl") +
-  theme_bw() 
+# for legend
+grobs <- ggplotGrob(p1)$grobs
+legend <- grobs[[which(sapply(grobs, function(x) x$name) == "guide-box")]]
 
 # Add plots together using cowplot
+cowplot::plot_grid(p1, p2, p3, p4, p5, legend,
+                   ncol = 2)
+# Create grid
+ggpubr::ggarrange(p1, p2, p3, p4, p5, # list of plots
+                  labels = "AUTO", # labels
+                  common.legend = T, # COMMON LEGEND
+                  legend = "bottom", # legend position
+                  align = "hv", # Align them both, horizontal and vertical
+                  ncol = 2)  # number of rows
+ggpubr::ggarrange(p1, p2, p3, p4, p5,
+                  labels = "AUTO",
+                  common.legend = T,
+                  legend = "bottom",
+                  ncol = 2, 
+                  nrow = 3)
 
-## plots of seawater mixing line!
-#
+ggsave()
 
 
 ## Biplots in concentrations (mg/l)

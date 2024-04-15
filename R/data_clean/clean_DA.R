@@ -28,14 +28,20 @@ pacman::p_load(tidyverse, openxlsx)
 # set data file location
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Raw_data/" 
 
-DA <- openxlsx::read.xlsx(paste0(input, "Lab/DA/Second_fieldwork/DA_analysis_second_fieldwork_Oct22_Jan23.xlsx"),
+DA1 <- openxlsx::read.xlsx(paste0(input, "Lab/DA/2.Second_fieldwork/DA_analysis_second_fieldwork_Oct22_Jan23.xlsx"),
                           sheet = "Final", detectDates = T)
+
+DA2 <- openxlsx::read.xlsx(paste0(input, "Lab/DA/3.Third_fieldwork/DA_analysis_third_fieldwork_Oct23_Jan24.xlsx"),
+                          sheet = "Final", detectDates = T) %>%
+  select(-X9)
 
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
 
 ###############################################################################
 # edit data
 ###############################################################################
+
+DA <- rbind(DA1, DA2)
 
 d <- DA %>%
   rename(value_NH4 = NH4,
@@ -87,7 +93,7 @@ d <- DA %>%
 ## make dataset in wide format
 d_wide <- d %>%
   mutate(parameter = paste(parameter, units)) %>%
-  mutate(value = paste0(limit_symbol, value)) %>%
+  mutate(value = paste0(limit_symbol, round(value, digits = 3))) %>%
   select(-c(detection_limit, limit_symbol, sd, units, method, notes)) %>%
   pivot_wider(., 
               names_from = parameter, 
@@ -102,8 +108,8 @@ d_wide <- d %>%
 # save data
 ###############################################################################
 
-openxlsx::write.xlsx(d, paste0(output, "/Second_fieldwork/DA_Oct-Jan_2023.xlsx"))
-openxlsx::write.xlsx(d_wide, paste0(output, "/Second_fieldwork/DA_Oct-Jan_2023_wide.xlsx"))
+openxlsx::write.xlsx(d, paste0(output, "/DA_Oct22-Jan24.xlsx"))
+openxlsx::write.xlsx(d_wide, paste0(output, "/DA_Oct22-Jan24_wide.xlsx"))
 
 
 

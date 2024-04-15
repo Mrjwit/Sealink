@@ -34,6 +34,9 @@ ecoli <- read.xlsx(paste0(input, "E.coli/E.coli.xlsx"),
 # E.coli data file fieldwork 2022-2023
 ecoli2 <- read.xlsx(paste0(input, "E.coli/E.coli.xlsx"),
                     sheet = "Fieldwork2", startRow = 2)
+# E.coli data file fieldwork 2023-2024
+ecoli3 <- read.xlsx(paste0(input, "E.coli/E.coli.xlsx"),
+                    sheet = "Fieldwork3", startRow = 2)
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -128,16 +131,60 @@ d2 <- d2 %>%
   ungroup() %>%
   select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) %>%
   mutate(notes = case_when(
-         samplecode == "GW098" ~ "large air bubble, 1 Petrifilm not fully incubated",
-         samplecode == "SR028" ~ "1 Petrifilm diluted 1:10",
-         samplecode == "WW005" ~ "1 petrifilm undiluted, another diluted 1:10",
-         samplecode %in% c("WW004", "WW006", "WW007") ~ "1 petrifilm diluted 1:10 and another 1:100",
-         TRUE ~ notes)) %>%
+    samplecode == "GW098" ~ "large air bubble, 1 Petrifilm not fully incubated",
+    samplecode == "SR028" ~ "1 Petrifilm diluted 1:10",
+    samplecode == "WW005" ~ "1 petrifilm undiluted, another diluted 1:10",
+    samplecode %in% c("WW004", "WW006", "WW007") ~ "1 petrifilm diluted 1:10 and another 1:100",
+    TRUE ~ notes)) %>%
+  distinct() %>%
+  arrange(samplecode)
+
+#### third fieldwork ####
+d3 <- ecoli3 %>%
+  # some plates were incubated with dilutions, select the ones with the highest accuracy
+  filter(Select == 1) %>%
+  # add parameter column with E.coli
+  mutate(parameter = "E.coli",
+         units = "CFU/100 ml") %>%
+  # rename columns
+  dplyr::rename(conc = E..coli) %>%
+  # select only relevant columns
+  select(samplecode, parameter, conc, units, notes) 
+
+# plot duplo values against each other
+ggplot(d3 %>% select(samplecode, conc) %>%
+         group_by(samplecode) %>%
+         mutate(duplo = paste("duplo", row_number())) %>%
+         pivot_wider(names_from = duplo,
+                     values_from = conc),
+       aes(`duplo 1`, `duplo 2`)) +
+  geom_abline(slope = 1) +
+  geom_point() +
+  coord_cartesian(xlim = c(0, 3e5), ylim = c(0, 3e5)) +
+  theme_bw()
+
+# Average the duplo/triplo samples
+d3 <- d3 %>%
+  group_by(samplecode) %>%
+  mutate(value = mean(conc, na.rm = T),
+         limit_symbol = "",
+         detection_limit = NA,
+         sd = NA,
+         method = "Petrifilm plate") %>%
+  ungroup() %>%
+  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) %>%
+  mutate(notes = case_when(
+    samplecode == "GW098" ~ "large air bubble, 1 Petrifilm not fully incubated",
+    samplecode == "SR028" ~ "1 Petrifilm diluted 1:10",
+    samplecode == "WW005" ~ "1 petrifilm undiluted, another diluted 1:10",
+    samplecode %in% c("WW004", "WW006", "WW007") ~ "1 petrifilm diluted 1:10 and another 1:100",
+    TRUE ~ notes)) %>%
   distinct() %>%
   arrange(samplecode)
 
 ## merge datasets together ##
-dat <- rbind(d, d2)
+dat <- rbind(d, d2, d3) %>%
+  distinct()
 
 # Check if every sample has only 1 value
 check <- dat %>%

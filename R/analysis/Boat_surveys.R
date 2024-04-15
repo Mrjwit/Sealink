@@ -47,12 +47,12 @@ pons <- read.csv(paste0(input, "2023-12-18/Boat_survey_radon_PiscaderaBay_18-12-
                         skip = 3) %>%
   rename("record" = "X.",
          "datetime" = "Date",
-         "conductivity (ÂµS/cm)" = "ConductivitÃ©..ÂµS.cm.",
-         "salinity (ppt)" = "SalinitÃ©..ppt.",
+         "conductivity (µS/cm)" = "Conductivité..µS.cm.",
+         "salinity (ppt)" = "Salinité..ppt.",
          "O2 (%)" = "O2...Sat.",
          "O2 (mg/L)" = "O2..mg.l.",
-         "temp O2 (C)" = "TempÃ©rature...C.",
-         "temp EC (C)" = "TempÃ©rature...C..1",
+         "temp O2 (C)" = "Température...C.",
+         "temp EC (C)" = "Température...C..1",
          "pH" = "PH..pH.",
          "redox (mV)" = "Redox..mV.") %>%
   #"temp pH (C)" = "TempÃ©rature...C..1") %>%
@@ -94,12 +94,12 @@ pons <- read.csv(paste0(input, "2023-12-19/Boat_survey_radon_PiscaderaBay_19-12-
                         skip = 3) %>%
   rename("record" = "X.",
          "datetime" = "Date",
-         "conductivity (ÂµS/cm)" = "ConductivitÃ©..ÂµS.cm.",
-         "salinity (ppt)" = "SalinitÃ©..ppt.",
+         "conductivity (µS/cm)" = "Conductivité..µS.cm.",
+         "salinity (ppt)" = "Salinité..ppt.",
          "O2 (%)" = "O2...Sat.",
          "O2 (mg/L)" = "O2..mg.l.",
-         "temp O2 (C)" = "TempÃ©rature...C.",
-         "temp EC (C)" = "TempÃ©rature...C..1",
+         "temp O2 (C)" = "Température...C.",
+         "temp EC (C)" = "Température...C..1",
          "pH" = "PH..pH.",
          "redox (mV)" = "Redox..mV.") %>%
   #"temp pH (C)" = "TempÃ©rature...C..1") %>%
@@ -141,12 +141,12 @@ pons <- read.csv(paste0(input, "2023-12-20/Boat_survey_radon_PiscaderaBay_20-12-
                  skip = 3) %>%
   rename("record" = "X.",
          "datetime" = "Date",
-         "conductivity (ÂµS/cm)" = "ConductivitÃ©..ÂµS.cm.",
-         "salinity (ppt)" = "SalinitÃ©..ppt.",
+         "conductivity (µS/cm)" = "Conductivité..µS.cm.",
+         "salinity (ppt)" = "Salinité..ppt.",
          "O2 (%)" = "O2...Sat.",
          "O2 (mg/L)" = "O2..mg.l.",
-         "temp O2 (C)" = "TempÃ©rature...C.",
-         "temp EC (C)" = "TempÃ©rature...C..1",
+         "temp O2 (C)" = "Température...C.",
+         "temp EC (C)" = "Température...C..1",
          "pH" = "PH..pH.",
          "redox (mV)" = "Redox..mV.") %>%
   #"temp pH (C)" = "TempÃ©rature...C..1") %>%
@@ -189,12 +189,12 @@ pons <- read.csv(paste0(input, "2023-12-22/Boat_survey_radon_PiscaderaBay_22-12-
                  skip = 3) %>%
   rename("record" = "X.",
          "datetime" = "Date",
-         "conductivity (ÂµS/cm)" = "ConductivitÃ©..ÂµS.cm.",
-         "salinity (ppt)" = "SalinitÃ©..ppt.",
+         "conductivity (µS/cm)" = "Conductivité..µS.cm.",
+         "salinity (ppt)" = "Salinité..ppt.",
          "O2 (%)" = "O2...Sat.",
          "O2 (mg/L)" = "O2..mg.l.",
-         "temp O2 (C)" = "TempÃ©rature...C.",
-         "temp EC (C)" = "TempÃ©rature...C..1",
+         "temp O2 (C)" = "Température...C.",
+         "temp EC (C)" = "Température...C..1",
          "pH" = "PH..pH.",
          "redox (mV)" = "Redox..mV.") %>%
   #"temp pH (C)" = "TempÃ©rature...C..1") %>%
@@ -228,7 +228,7 @@ df <- rbind(df, df2, df3, df4)
 pts <- st_as_sf(df %>% filter(!is.na(longitude)), coords = c("longitude", "latitude"),
                 crs = 4326, agr = "constant")
 write.csv(df, paste0(input, "data_combined.csv"))
-write.csv(df %>% filter(!is.na(`conductivity (ÂµS/cm)`)), paste0(input, "data_EC_combined.csv"))
+write.csv(df %>% filter(!is.na(`conductivity (µS/cm)`)), paste0(input, "data_EC_combined.csv"))
 
 # importing GIS layers
 input_GIS <- "C:/Users/mikewit/Documents/SEALINK/GIS/SEALINK/"
@@ -285,14 +285,14 @@ p3 <- ggplot() +
   #                                       linetype = "dashed", 
   #                                       linewidth = 0.5), 
   #       panel.background = element_rect(fill = "aliceblue"))
-  theme_mw()
-
+  #theme_mw()
+  theme_bw()
 p <- ggpubr::ggarrange(p1, p2, ncol = 1)
 ggpubr::ggarrange(p, p3)
 
 # EC + O2 + map
 p1 <- ggplot(df %>% filter(date == "2023-12-22",
-                           `conductivity (ÂµS/cm)` > 50), aes(x = datetime2, y = `conductivity (ÂµS/cm)`)) +
+                           `conductivity (µS/cm)` > 50), aes(x = datetime2, y = `conductivity (ÂµS/cm)`)) +
   geom_line() +
   geom_point() +
   labs(x = "", y = "EC [uS/cm]]",
@@ -313,7 +313,7 @@ p3 <- ggplot() +
   geom_sf(data = pts %>% filter(date == "2023-12-22", 
                                 `O2 (%)` < 5000 &  `O2 (%)` > 0,
                                 #`conductivity (ÂµS/cm)` > 50,
-                                !is.na(`conductivity (ÂµS/cm)`)), 
+                                !is.na(`conductivity (µS/cm)`)), 
           #aes(fill = `conductivity (ÂµS/cm)`), 
           aes(fill = `O2 (%)`), 
           colour = "black",

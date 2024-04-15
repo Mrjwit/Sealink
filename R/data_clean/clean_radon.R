@@ -82,7 +82,8 @@ d_set <- d %>%
   # remove samples with double measurements
   filter(!samplecode %in% duplos$samplecode) %>%
   # add records from duplos with highest values to dataset
-  rbind(., duplos %>% select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes))
+  rbind(., duplos %>% select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes)) %>%
+  filter(!is.na(samplecode))
 
 # Check if every sample has only 1 value
 check <- d_set %>%

@@ -1,6 +1,6 @@
 #
 # Input: Survey data file for collection of field measurements in Curacao, 
-# 2021-2022.
+# 2021-2023.
 #         
 # Output: Cleaned field measurements file for further hydrochemical analysis
 # 
@@ -9,7 +9,7 @@
 #
 # Author: Mike Wit
 # Date: 12-01-2022
-# Edit: XX-XX-XXXX
+# Edit: 11-12-2023
 # 
 # 
 ###############################################################################
@@ -35,7 +35,10 @@ survey <- read.xlsx(paste0(input, "Hydrochemie/Survey_data_Oct21_Jan22.xlsx"))
 survey_old <- read.xlsx(paste0(input, "Hydrochemie/Survey_data.xlsx"))
 
 # second fieldwork 2022-2023
-survey2 <- read.xlsx(paste0(input, "Hydrochemie/Survey_data_second_fieldwork.xlsx"))[106:231,]
+survey2 <- read.xlsx(paste0(input, "Hydrochemie/Survey_data_second_fieldwork.xlsx"))[106:232,]
+
+# third fieldwork 2023-2024
+survey3 <- read.xlsx(paste0(input, "Hydrochemie/third_fieldwork/Survey_data_third_fieldwork.xlsx"))[233:318,]
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -44,20 +47,25 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 # edit data
 ###############################################################################
 
-# merge survey data fieldwork 1 (2021-2022) and 2 (2022-2023)
+# merge survey data fieldwork 1 (2021-2022), 2 (2022-2023) and 3 (2023-2024)
 survey <- rbind(survey %>% 
-                  select(-c(91, 96, 97, 110, 134, 139)) %>%
+                  dplyr::select(-c(91, 96, 97, 110, 134, 139)) %>%
                   mutate("Well.code.(Titus)" = "",
                          "EC.profile" = "",
-                         "Note.on.dipper.measurements" = ""), 
+                         "Note.on.dipper.measurements" = "",
+                         year = 2021), 
                 survey2 %>%
-                  select(-c(91, 96, 97, 110, 134, 139)))
+                  dplyr::select(-c(91, 96, 97, 110, 134, 139)) %>%
+                  mutate(year = 2022),
+                survey3 %>%
+                  dplyr::select(-c(91, 96, 97, 110, 134, 139)) %>%
+                  mutate(year = 2023))
 
 # clean up the survey data
 d1 <- survey %>%
   # remove completely empty columns
-  select(where(~ !(all(is.na(.)) | all(. == "")))) %>%
-  # select only records with samples
+  dplyr::select(where(~ !(all(is.na(.)) | all(. == "")))) %>%
+  # dplyr::select only records with samples
   filter(!is.na(`Sample.code.#1`)) %>%
   # when 2 samples are collected on 1 location, these are stored in the same record
   # rename columns from sample measurements in order to add second samples later on new lines
@@ -68,7 +76,7 @@ d1 <- survey %>%
          EC_uS = `EC.(uS/cm).#1`,
          EC_mS = `EC.(mS/cm).#1`,
          pH = `pH.#1`,
-         Temp = `Temperature.(Â°C).#1`,
+         Temp = `Temperature.(°C).#1`,
          NO3_N = `NO3-N.(mg/L).#1`,
          NO2_N = `NO2-N.(mg/L).#1`,
          NO3 = `NO3.(mg/L).#1`,
@@ -78,10 +86,10 @@ d1 <- survey %>%
          redox = `Redox.#1`,
          sample_notes = `Note.on.hydrochemistry.well.sample.1`)
 
-# select second samples collected on same location
+# dplyr::select second samples collected on same location
 d2 <- d1 %>%
   filter(!is.na(`Sample.code.#2`)) %>%
-  select(-c(samplecode:NO2, 
+  dplyr::select(-c(samplecode:NO2, 
             sample_method, sample_depth,
             redox)) %>%
   # rename columns from sample measurements in order to merge with first samples later
@@ -92,7 +100,7 @@ d2 <- d1 %>%
          EC_uS = `EC.(uS/cm).#2`,
          EC_mS = `EC.(mS/cm).#2`,
          pH = `pH.#2`,
-         Temp = `Temperature.(Â°C).#2`,
+         Temp = `Temperature.(°C).#2`,
          NO3_N = `NO3-N.(mg/L).#2`,
          NO2_N = `NO2-N.(mg/L).#2`,
          NO3 = `NO3.(mg/L).#2`,
@@ -103,7 +111,7 @@ d2 <- d1 %>%
 
 # merge two sample datasets and remove second samples columns
 d <- d1 %>%
-  select(-c(setdiff(names(d1), names(d2)))) %>%
+  dplyr::select(-c(setdiff(names(d1), names(d2)))) %>%
   rbind(., d2)
 
 # add date and time column
@@ -116,7 +124,7 @@ d <- d %>%
 
 # check xy coordinates and add them from old survey file if necessary
 survey_coord <- survey_old %>%
-  select(sample, xcoord, ycoord) %>%
+  dplyr::select(sample, xcoord, ycoord) %>%
   filter(!is.na(sample)) %>%
   rename(samplecode = sample)
 
@@ -126,16 +134,16 @@ d <- d %>%
          ycoord = ifelse(is.na(ycoord), y, ycoord))
 
 # check coordinates
-# d %>% select(samplecode, x, y, xcoord, ycoord) %>% 
+# d %>% dplyr::select(samplecode, x, y, xcoord, ycoord) %>% 
 #   mutate(verschilx = ifelse(x == xcoord, 0, 1),
 #          verschily = ifelse(y == ycoord, 0, 1)) %>%
 #   mutate(xc = ifelse(is.na(xcoord), x, xcoord),
 #          yc = ifelse(is.na(ycoord), y, ycoord)) %>%
 #   view()
   
-# reorder columns and select relevant columns for hydrochemistry
+# reorder columns and dplyr::select relevant columns for hydrochemistry
 d_set <- d %>%
-  select(samplecode, Well.ID, xcoord, ycoord, date, time, 
+  dplyr::select(samplecode, Well.ID, xcoord, ycoord, year, date, time, 
          `Well.depth.below.surface.(m)`, `Depth.of.well.owner.(m)`, `Groundwater.level.below.surface.(m)`,
          sample_method, sample_depth,
          EC_uS, EC_mS, pH, Temp, DO, DO_sat, redox, NO3_N, NO3, NO2_N, NO2, 
@@ -156,4 +164,4 @@ d_set <- d %>%
 
 write.xlsx(d, paste0(output, "Clean_data/survey_complete.xlsx"))
 write.xlsx(d_set, paste0(output, "Clean_data/survey_clean.xlsx"))
-
+write.csv(d_set, paste0(output, "Clean_data/survey_clean.csv"))

@@ -70,6 +70,21 @@ ggplot(dat %>% filter(User == "Total"),
        y = bquote(~m^3)) +
   theme_bw()
 
+# Klein Kwartier
+avg <- dat %>% filter(User == "Total",  WWTP == "Klein Kwartier") %>%
+  summarise(mean(Usage))
+
+ggplot(dat %>% filter(User == "Total",
+                      WWTP == "Klein Kwartier"), 
+       aes(x = Usage, y = Period, fill = WWTP)) +
+  geom_col(position = "identity") +
+  geom_vline(xintercept = avg$`mean(Usage)`, linetype = "dashed", colour = "firebrick", linewidth = 1) +
+  scale_y_discrete(limits=rev) +
+  labs(title = "Klein Kwartier effluent hergebruik, 2017",
+       x = bquote(~m^3), y = "") + 
+  theme_bw() +
+  theme(legend.position = "none")
+
 ## graph Mark ##
 # multimeter
 ggplot(d_long, aes(x = datetime2, y = value, color = param)) +

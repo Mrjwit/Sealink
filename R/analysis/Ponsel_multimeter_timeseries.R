@@ -52,11 +52,11 @@ dat <- rbind(dat, dat2)
 d <- dat %>%
   rename("record" = "X.",
          "datetime" = "Date",
-         "conductivity (ÂµS/cm)" = "ConductivitÃ©..ÂµS.cm.",
-         "salinity (ppt)" = "SalinitÃ©..ppt.",
+         "conductivity (µS/cm)" = "Conductivité..µS.cm.",
+         "salinity (ppt)" = "Salinité..ppt.",
          "O2 (%)" = "O2...Sat.",
          "O2 (mg/L)" = "O2..mg.l.",
-         "temp O2 (C)" = "TempÃ©rature...C.",
+         "temp O2 (C)" = "Température...C.",
          "pH" = "PH..pH.",
          "redox (mV)" = "Redox..mV.") %>%
          #"temp pH (C)" = "TempÃ©rature...C..1") %>%

@@ -34,7 +34,12 @@ alk <- read.xlsx(paste0(input, "Alkalinity/Alkalinity_titration.xlsx"),
 # alkalinity data file 2nd fieldwork 2022-2023
 alk2 <- read.xlsx(paste0(input, "Alkalinity/Alkalinity_titration.xlsx"),
                   sheet = "Field titration 2nd", startRow = 10) %>%
-  select(1:3, 5:10, 13:15) 
+  dplyr::select(1:3, 5:10, 13:15) 
+
+# alkalinity data file 3rd fieldwork 2023-2024
+alk3 <- read.xlsx(paste0(input, "Alkalinity/Alkalinity_titration.xlsx"),
+                  sheet = "Field titration 3rd", startRow = 10) %>%
+  dplyr::select(1:3, 5:10, 13:15) 
 
 # output file location
 output <- "C:/Users/mikewit/Documents/SEALINK/Data/" 
@@ -64,8 +69,8 @@ d <- alk %>%
          detection_limit = NA,
          sd = NA,
          method = "Field titration") %>%
-  # select only relevant columns 
-  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) 
+  # dplyr::select only relevant columns 
+  dplyr::select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) 
 
 # Clean up the alkalinity data second fieldwork
 d2 <- alk2 %>%
@@ -80,16 +85,16 @@ d2 <- alk2 %>%
   filter(!samplecode %in% c("test blanc"),
          !is.na(samplecode),
          `C.[mg/l]` != 0) %>%
-  # select only relevant columns for now
-  select(samplecode, `C.[mg/l]`, notes) %>%
+  # dplyr::select only relevant columns for now
+  dplyr::select(samplecode, `C.[mg/l]`, notes) %>%
   # titrations are in duplicates, take the average and add notes together
   group_by(samplecode) %>%
   mutate(avg = mean(`C.[mg/l]`),
          notes = ifelse(length(unique(notes)) > 1, 
                         paste(notes, collapse = "; "), notes)) %>%
   ungroup() %>%
-  # select only 1 row per sample
-  select(-`C.[mg/l]`) %>%
+  # dplyr::select only 1 row per sample
+  dplyr::select(-`C.[mg/l]`) %>%
   distinct() %>%
   rename(`mg/l` = avg) %>%
   # add mmol
@@ -104,11 +109,51 @@ d2 <- alk2 %>%
          detection_limit = NA,
          sd = NA,
          method = "Field titration") %>%
-  # select only relevant columns 
-  select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) 
+  # dplyr::select only relevant columns 
+  dplyr::select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) 
 
-# merge two datasets together
-dat <- rbind(d, d2)
+# Clean up the alkalinity data second fieldwork
+d3 <- alk3 %>%
+  # add calculated HCO3 concentration for RW008 using measured pH = 6.24
+  # mutate(`C.[mg/l]` = case_when(
+  #   samplecode == "RW008" ~ 10^(-11.24+6.24)*1000,
+  #   TRUE ~ `C.[mg/l]`),
+  #   notes = case_when(
+  #     samplecode == "RW008" ~ paste(notes, "value is calculated using pH from field", sep = "; "),
+  #     TRUE ~ notes)) %>%
+  # remove rows that are no samples and remove 0 values
+  filter(!samplecode %in% c("test blanc", "test tapwater"),
+         !is.na(samplecode),
+         `C.[mg/l]` != 0) %>%
+  # dplyr::select only relevant columns for now
+  dplyr::select(samplecode, `C.[mg/l]`, notes) %>%
+  # titrations are in duplicates, take the average and add notes together
+  group_by(samplecode) %>%
+  mutate(avg = mean(`C.[mg/l]`),
+         notes = ifelse(length(unique(notes)) > 1, 
+                        paste(notes, collapse = "; "), notes)) %>%
+  ungroup() %>%
+  # dplyr::select only 1 row per sample
+  dplyr::select(-`C.[mg/l]`) %>%
+  distinct() %>%
+  rename(`mg/l` = avg) %>%
+  # add mmol
+  mutate(`mmol/l` = `mg/l` / 61.02) %>%
+  # place different units in long format
+  pivot_longer(., cols = c(`mg/l`, `mmol/l`),
+               values_to = "value",
+               names_to = "units") %>%
+  # add parameter, limit symbol, detection limit, sd and method
+  mutate(parameter = "HCO3",
+         limit_symbol = "",
+         detection_limit = NA,
+         sd = NA,
+         method = "Field titration") %>%
+  # dplyr::select only relevant columns 
+  dplyr::select(samplecode, parameter, value, sd, limit_symbol, detection_limit, units, method, notes) 
+
+# merge three datasets together
+dat <- rbind(d, d2, d3)
 
 # Check if every sample has only 1 value
 check <- dat %>%

@@ -45,8 +45,8 @@ output <- "C:/Users/mikewit/Documents/SEALINK/Data/"
 
 rain %>% filter(Year > 1970)  %>%
   summarise(min_P = min(Total, na.rm = T),
-            p_5 = quantile(Total, 0.05, na.rm = T),
-            p_10 = quantile(Total, 0.1, na.rm = T),
+            p5 = quantile(Total, 0.05, na.rm = T),
+            p10 = quantile(Total, 0.1, na.rm = T),
             p50 = median(Total, na.rm = T),
             avg = mean(Total, na.rm = T),
             p90 = quantile(Total, 0.9, na.rm = T),
@@ -117,10 +117,10 @@ a1 <- ylim.prim[1] - b1*ylim.sec[1]
 
 p1 <- ggplot(data = clim %>% filter(month != "AVG")) +
   geom_col(aes(x = month, y = `Av. Montly rainfall mm`), fill = "steelblue", colour = "black") +
-  geom_line(aes(x = month, y = a1 + b1 * `Av. Air temperature 째C`, group = 1), colour = "orange2", size = 1) +
-  geom_line(aes(x = month, y = a1 + b1 * `Av. Maximum temperature 째C`, group = 1), colour = "orange2", size = 0.7, linetype = "dashed") +
-  geom_line(aes(x = month, y = a1 + b1 * `Av. Minimum temperature 째C`, group = 1), colour = "orange2", size = 0.7, linetype = "dashed") +
-  scale_y_continuous("Av. monthly precipitation [mm]", sec.axis = sec_axis(~ (. - a1)/b1, name  = "Av. air temperature [째C]")) +
+  geom_line(aes(x = month, y = a1 + b1 * `Av. Air temperature 캜`, group = 1), colour = "orange2", size = 1) +
+  geom_line(aes(x = month, y = a1 + b1 * `Av. Maximum temperature 캜`, group = 1), colour = "orange2", size = 0.7, linetype = "dashed") +
+  geom_line(aes(x = month, y = a1 + b1 * `Av. Minimum temperature 캜`, group = 1), colour = "orange2", size = 0.7, linetype = "dashed") +
+  scale_y_continuous("Av. monthly precipitation [mm]", sec.axis = sec_axis(~ (. - a1)/b1, name  = "Av. air temperature [캜]")) +
   labs(x = "", 
        title = "Climatological data Curacao",
        subtitle = "period 1981-2010") +
@@ -181,10 +181,10 @@ a1 <- ylim.prim[1] - b1*ylim.sec[1]
 ggplot(data = clim %>% filter(month != "AVG")) +
   geom_col(aes(x = month, y = `Av. Montly rainfall mm`), fill = "steelblue", colour = "black") +
   geom_line(aes(x = month, y = `Av. Monthly evaporation mm`, group = 1), colour = "firebrick", size = 1) +
-  geom_line(aes(x = month, y = a1 + b1 * `Av. Air temperature 째C`, group = 1), colour = "orange2", size = 1) +
-  geom_line(aes(x = month, y = a1 + b1 * `Av. Maximum temperature 째C`, group = 1), colour = "orange2", size = 0.7, linetype = "dashed") +
-  geom_line(aes(x = month, y = a1 + b1 * `Av. Minimum temperature 째C`, group = 1), colour = "orange2", size = 0.7, linetype = "dashed") +
-  scale_y_continuous("Av. monthly precipitation and evaporation [mm]", sec.axis = sec_axis(~ (. - a1)/b1, name  = "Av. air temperature [째C]")) +
+  geom_line(aes(x = month, y = a1 + b1 * `Av. Air temperature 캜`, group = 1), colour = "orange2", size = 1) +
+  geom_line(aes(x = month, y = a1 + b1 * `Av. Maximum temperature 캜`, group = 1), colour = "orange2", size = 0.7, linetype = "dashed") +
+  geom_line(aes(x = month, y = a1 + b1 * `Av. Minimum temperature 캜`, group = 1), colour = "orange2", size = 0.7, linetype = "dashed") +
+  scale_y_continuous("Av. monthly precipitation and evaporation [mm]", sec.axis = sec_axis(~ (. - a1)/b1, name  = "Av. air temperature [캜]")) +
   labs(x = "", 
        title = "Climatological data Curacao",
        subtitle = "period 1981-2010") +

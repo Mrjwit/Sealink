@@ -30,24 +30,31 @@ pacman::p_load(tidyverse, openxlsx, ggmap,
 # set data file location
 input <- "C:/Users/mikewit/Documents/SEALINK/Data/Clean_data/" 
 
-# load cleaned data of 2021-2022 fieldwork
-alk <- openxlsx::read.xlsx(paste0(input, "alkalinity_clean.xlsx")) # includes fw1 + 2
-ecoli <- openxlsx::read.xlsx(paste0(input, "ecoli_clean.xlsx")) # includes fw1 + 2
-radon <- openxlsx::read.xlsx(paste0(input, "radon_clean.xlsx")) # includes fw1 + 2
-labdata <- openxlsx::read.xlsx(paste0(input, "lab_data_long.xlsx")) # only fw1
-isotopes <- openxlsx::read.xlsx(paste0(input, "isotopes_clean.xlsx")) # only fw1, yet
-metadata <- openxlsx::read.xlsx(paste0(input, "survey_clean.xlsx")) # includes fw1 + 2
-DOC <- openxlsx::read.xlsx(paste0(input, "DOC_clean.xlsx")) # only fw1, yet
-
 # load dataset of Jessie (2020-2021)
 d_2020 <- openxlsx::read.xlsx(paste0(input, "2020/hydrochemistry2020.xlsx"))
+
+# load cleaned data of 2021-2022 fieldwork
+alk <- openxlsx::read.xlsx(paste0(input, "alkalinity_clean.xlsx")) # includes fw1+2+3
+ecoli <- openxlsx::read.xlsx(paste0(input, "ecoli_clean.xlsx")) # includes fw1+2+3
+radon <- openxlsx::read.xlsx(paste0(input, "radon_clean.xlsx")) # includes fw1+2+3
+labdata <- openxlsx::read.xlsx(paste0(input, "lab_data_long.xlsx")) # only fw1
+isotopes <- openxlsx::read.xlsx(paste0(input, "isotopes_clean.xlsx")) # only fw1, yet
+metadata <- openxlsx::read.xlsx(paste0(input, "survey_clean.xlsx")) # includes fw1+2+3
+DOC <- openxlsx::read.xlsx(paste0(input, "DOC_clean.xlsx")) # only fw1+2, yet
+DA2 <- openxlsx::read.xlsx(paste0(input, "DA_Oct22-Jan24.xlsx")) # fw2+3
 
 # load cleaned labdata of 2022-2023 fieldwork
 IC2 <- openxlsx::read.xlsx(paste0(input, "Second_fieldwork/IC_Oct-Jan_2023.xlsx")) %>%
   # remove NH4 and PO4 from IC to replace with DA
   filter(!parameter %in% c("NH4", "PO4"))
-DA2 <- openxlsx::read.xlsx(paste0(input, "Second_fieldwork/DA_Oct-Jan_2023.xlsx"))
 ICP2 <- openxlsx::read.xlsx(paste0(input, "Second_fieldwork/ICP_Oct-Jan_2023.xlsx"))
+
+# load cleaned labdata of 2023-2024 fieldwork
+IC3 <- openxlsx::read.xlsx(paste0(input, "Third_fieldwork/IC_Oct-Jan_2024.xlsx")) %>%
+  # remove NH4 and PO4 from IC to replace with DA
+  filter(!parameter %in% c("NH4", "PO4"))
+# ICP3
+ICP3 <- openxlsx::read.xlsx(paste0(input, "Third_fieldwork/ICPOES_Oct-Jan_2024.xlsx"))
 
 # load historic hydrochemical dataset of 1977 and 1992
 data1977_1992 <- openxlsx::read.xlsx(paste0(input, "hydrochemistry1977-1992.xlsx"))
@@ -91,7 +98,8 @@ data <- rbind(labdata,
               alk %>% filter(units == "mg/l"), 
               ecoli, radon, d, isotopes, DOC,
               IC2 %>% filter(!parameter %in% c("Na", "Ca", "Mg", "K")), 
-              DA2, ICP2) %>%
+              DA2, ICP2,
+              IC3, ICP3) %>%
   arrange(samplecode, parameter) %>%
   mutate(watercode = substr(samplecode, start = 1, stop = 2)) %>%
   # Remove units mg N/L and mg P/L, for PO4 only select DA analysis
@@ -367,7 +375,7 @@ data <- rbind(labdata,
 ## Convert Alkalinity as CaCO3 to HCO3??? ## already done in alkalinity sheet?
 
 data$parameter <- data$parameter %>%
-  recode("HCO3" = "HCO3_field")
+  dplyr::recode("HCO3" = "HCO3_field")
 d <- data %>%
   filter(parameter %in% c("HCO3_field", "HCO3_lab")) %>%
   dplyr::select(samplecode, parameter, value) %>%
@@ -404,7 +412,7 @@ data <- rbind(data, d) %>%
 
 # add main watertypes 
 data$sampletype <- data$watercode %>% 
-  recode("AI" = "air",
+  dplyr::recode("AI" = "air",
          "GW" = "groundwater",
          "SR" = "surface runoff",
          "SW" = "surfacewater", 
@@ -416,7 +424,7 @@ data$sampletype <- data$watercode %>%
 
 # add secondary watertypes
 data$subtype <- data$watercode %>% 
-  recode("AI" = "air",
+  dplyr::recode("AI" = "air",
          "GW" = "groundwater",
          "SR" = "surface runoff",
          "SW" = "surfacewater", 
@@ -427,16 +435,18 @@ data$subtype <- data$watercode %>%
          "SE" = "seawater") 
 
 # differentiate between treated (WW001, SW001-SW002) and untreated (WW002-WW003) wastewater
+# and for drinking water between east (TW003) and west (TW001, TW002, TW004, TW005) 
 data <- data %>%
   mutate(subtype = case_when(
-    samplecode %in% c("WW001", "WW005", "WW007", "SW001", "SW002", "SW005") ~ "treated wastewater",
-    samplecode %in% c("WW002", "WW003", "WW004", "WW006", "WW008", "SR028") ~ "untreated wastewater",
+    samplecode %in% c("WW001", "WW005", "WW007", "SW001", "SW002", "SW005", "SW016", "SW018", "SW019", "SW020") ~ "treated wastewater",
+    samplecode %in% c("WW002", "WW003", "WW004", "WW006", "WW008", "SR028", "WW009", "WW010", "WW011", "WW012") ~ "untreated wastewater",
     samplecode %in% c("SR009", "SR010", "SR012", "SR014", "SR015", "SR016", 
                       "SR017", "SR018", "SR019", "SR020", "SR021", "SR023", 
                       "SR024", "SR025", "SR026", "SR027", "SR029", "SR031", 
-                      "SR032", "SR033", "SR034") ~ "rooi discharge",
-    samplecode %in% c("SW004", "SW009", "SW010") ~ "spring",
-    samplecode == "SW012" ~ "groundwater",
+                      "SR032", "SR033", "SR034", "SR035", "SR036", "SR037", 
+                      "SR038", "SR039", "SR041", "SR042") ~ "rooi discharge",
+    samplecode %in% c("SW004", "SW009", "SW010", "SW015", "SW017") ~ "spring", # check SW017
+    samplecode %in% c("SW012") ~ "groundwater",
     TRUE ~ subtype ))
 
 ###############################################################################
@@ -506,13 +516,14 @@ d <- rbind(d, set)
 
 ## add data from 2021 Jessie ##
 d <- rbind(d, d_2020 %>% mutate(units = case_when(
-  units ~ "ug/L" ~ "ug/l",
-  units ~ "mg/L" ~ "mg/l",
+  units == "ug/L" ~ "ug/l",
+  units == "mg/L" ~ "mg/l",
   TRUE ~ units
 )))
 
-## final adjustments for 2021-2022
+## final adjustments for 2021-2023
 dat <- data %>% mutate(putcode = case_when(
+  samplecode %in% c("GW001", "GW133A", "GW133B", "GW133C") ~ "Parallelweg",
   samplecode == "GW002" ~ "4z1",
   samplecode %in% c("GW008", "GW094") ~ "4n83",
   samplecode == "GW018" ~ "3n5",
@@ -523,8 +534,9 @@ dat <- data %>% mutate(putcode = case_when(
   samplecode == "GW038" ~ "5z16",
   samplecode == "GW039" ~ "5z28",
   samplecode == "GW045" ~ "3z2",
-  samplecode %in% c("GW046", "GW076") ~ "5n277",
-  samplecode %in% c("GW047", "GW077") ~ "5n427",
+  samplecode %in% c("GW046", "GW076", "GW125A", "GW125B") ~ "5n277",
+  samplecode %in% c("GW047", "GW077", "GW131") ~ "5n427",
+  samplecode %in% c("GW049", "GW139A", "GW139B", "GW139C") ~ "Willibrordus",
   samplecode == "GW050" ~ "3z102",
   samplecode == "GW054" ~ "3z51",
   samplecode == "GW057" ~ "5z12",
@@ -533,6 +545,7 @@ dat <- data %>% mutate(putcode = case_when(
   samplecode %in% c("GW062", "GW082") ~ "2n8",
   samplecode == "GW065" ~ "2n2",
   samplecode == "GW066" ~ "2n4",
+  samplecode %in% c("GW069", "GW145") ~ "Jason",
   samplecode == "GW070" ~ "5n330",
   samplecode == "SP002" ~ "3n12",
   samplecode == "GW080" ~ "5z376",
@@ -541,21 +554,37 @@ dat <- data %>% mutate(putcode = case_when(
   samplecode == "GW084" ~ "2n40",
   samplecode == "GW085" ~ "2n28",
   samplecode == "GW086" ~ "2n7",
+  samplecode %in% c("GW087", "GW149") ~ "Soto bij schotel",
   samplecode == "GW089" ~ "1z5",
   samplecode == "GW090" ~ "1n1",
   samplecode == "GW098" ~ "5z15",
-  samplecode == "GW108" ~ "1z26",
-  samplecode == "GW109" ~ "1z1",
+  samplecode %in% c("GW102", "GW128") ~ "Porto Marie, perhaps 3z19",
+  samplecode %in% c("GW108", "GW126A", "GW126B", "GW126C") ~ "1z26",
+  samplecode %in% c("GW109", "GW127") ~ "1z1",
+  samplecode %in% c("GW112A", "GW112B", "GW120", "GW130A", "GW130B", "GW130C") ~ "Bracelli",
   samplecode == "GW117" ~ "1z7",
+  samplecode == "GW118" ~ "5z14",
+  samplecode == "GW119" ~ "Haime open well",
+  samplecode == "GW122A" ~ "Haime closed well",
+  samplecode == "GW122B" ~ "Haime closed well",
+  samplecode == "GW123" ~ "Cemetery",
+  samplecode == "GW132" ~ "Landhuis Wechi",
+  samplecode == "GW132" ~ "5z383",
+  samplecode == "GW135" ~ "Kura Hulanda",
+  samplecode %in% c("GW136A", "GW136B", "GW136C") ~ "1z30",
+  samplecode == "GW138" ~ "2n56",
   samplecode %in% c("GW006", "GW114") ~ "Ronde Klip",
   samplecode %in% c("GW009", "GW115") ~ "Well Manfred CMF",
-  samplecode %in% c("GW014", "GW014A", "GW014B", "GW073", "GW113") ~ "Well Gerard van Buurt",
+  samplecode %in% c("GW014", "GW014A", "GW014B", "GW073", "GW113", "GW144") ~ "Well Gerard van Buurt",
   samplecode %in% c("GW055", "GW055A", "GW055B", "GW071") ~ "Herb garden",
+  samplecode %in% c("GW116A", "GW116B", "GW124") ~ "Wempi deep well",
   TRUE ~ ""), 
                               year = case_when(
                                 samplecode %in% labdata$samplecode ~ 2021,
                                 samplecode %in% IC2$samplecode ~ 2022,
-                                TRUE ~ NA_real_),
+                                #samplecode %in% IC3$samplecode ~ 2023,
+                                TRUE ~ 2023), # adjsust when lab data 2023 are there
+                                #TRUE ~ NA_real_),
                               parameter = case_when(
                                 parameter == "EC_uS" ~ "EC",
                                 TRUE ~ parameter)) %>%
@@ -565,6 +594,8 @@ dat <- data %>% mutate(putcode = case_when(
 data <- rbind(dat, d) %>%
   dplyr::select(putcode, samplecode, year, parameter, value, sd, limit_symbol, detection_limit,
          units, method, notes, watercode, sampletype, subtype, xcoord, ycoord) %>%
+  mutate(xcoord = as.numeric(xcoord),
+         ycoord = as.numeric(ycoord)) %>%
   arrange(year, samplecode, parameter) %>%
   # change pH units
   mutate(units = case_when(
@@ -627,6 +658,18 @@ data %>%
 openxlsx::write.xlsx(data %>% filter(!sampletype %in% c("air", "Mi", "Ta")), 
                      paste0(output, "hydrochemistry_curacao.xlsx"))
 
+# Wide format
+d_wide <- data %>% filter(!sampletype %in% c("air", "Mi", "Ta"), 
+                          year > 2020) %>%
+  mutate(parameter = paste0(parameter, " [", units, "]")) %>%
+  select(putcode, samplecode, xcoord, ycoord, year, sampletype, subtype, parameter, value) %>%
+  pivot_wider(names_from = parameter, 
+              values_from = value) 
+# change NA's to -99 for GIS
+d_wide[c(10:60)][is.na(d_wide[c(10:60)])] <- -99
+
+openxlsx::write.xlsx(d_wide, paste0(output, "hydrochemistry_curacao_wide.xlsx"))
+write.csv(d_wide, paste0(output, "hydrochemistry_curacao_wide.csv"))
 # metadata file
 # openxlsx::write.xlsx(d_meta, paste0(output, "metadata_2021_2022.xlsx"))
 
